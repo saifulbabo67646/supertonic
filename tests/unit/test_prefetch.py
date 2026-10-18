@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -49,3 +51,11 @@ def test_prefetch_stops_at_first_failure_with_its_name(
 def test_prefetch_module_imports_without_torch() -> None:
     # The real steps import torch lazily, so the module (and --help) work without the extra.
     assert [name for name, _ in prefetch.STEPS] == ["supertonic-3", "wavlm-large", "ecapa"]
+    # In a fresh interpreter, since this one may already hold torch from other tests.
+    code = (
+        "import sys\n"
+        "import supertonic_server.builder.extract.prefetch\n"
+        "assert 'torch' not in sys.modules, 'prefetch imported torch'\n"
+    )
+    done = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=60)
+    assert done.returncode == 0, done.stderr

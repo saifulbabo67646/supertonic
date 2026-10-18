@@ -24,6 +24,7 @@ def _supertonic(model_dir: Path | None) -> str:
 
 
 def _wavlm(model_dir: Path | None) -> str:
+    # model_dir is unused: every step takes it so STEPS stays uniform (WavLM uses the HF cache).
     import torch
 
     from supertonic_server.builder.extract.fast.config import WAVLM_REPO
@@ -34,6 +35,7 @@ def _wavlm(model_dir: Path | None) -> str:
 
 
 def _ecapa(model_dir: Path | None) -> str:
+    # model_dir is unused, as in _wavlm (ECAPA has its own cache folder).
     import torch
 
     from supertonic_server.builder.extract.accurate.speaker_loss import ecapa_savedir, load_ecapa

@@ -95,7 +95,8 @@ uv run python -m supertonic_server.builder.extract.prefetch
 The models go to the usual caches: Supertonic 3 where the server keeps it (the
 `supertonic` package's cache, or `SUPERTONIC_MODEL_DIR`), WavLM-Large into the Hugging
 Face hub cache, and the ECAPA model into `<Hugging Face hub cache>/supertonic-ecapa`
-(`HF_HUB_CACHE` / `HF_HOME` move both).
+(`HF_HUB_CACHE` / `HF_HOME` move both). `prefetch --model-dir <dir>` puts Supertonic 3 in
+`<dir>` instead (use the same directory as `SUPERTONIC_MODEL_DIR`); the other two stay put.
 
 Then start the server (`scripts\serve.ps1` or `scripts/serve.sh`). With the builder extra
 installed and a GPU present it builds locally: `GET /v1/health` shows `"builder":"local"`
@@ -218,6 +219,13 @@ sentences.
   hears, including noise and room colour.
 - Recordings that are mostly silence are rejected (`invalid_reference_audio` with the
   reason), as are files that are not audio.
+
+## Known limitations
+
+- A forwarded build whose request times out after the builder already accepted it (rare:
+  only when uploading and checking the audio takes over 2 minutes) leaves that job running
+  on the builder, and a retry queues behind it. Cancel it on the builder (`GET /v1/jobs`
+  there).
 
 ## Troubleshooting
 
