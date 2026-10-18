@@ -1,18 +1,14 @@
 // Build progress view: polls one job, shows stage, steps, ETA and loss; Finish now, Cancel, Try it.
 
 import * as api from "./api.js";
-import {
-  ACTIVE_STATES,
-  buildFacts,
-  duration,
-  METHOD_NAMES,
-  STAGE_LABELS,
-  STATE_LABELS,
-} from "./build-copy.js";
-import { getLanguages, getVoices, refreshVoices } from "./catalog.js";
+import { ACTIVE_STATES, duration, METHOD_NAMES, STAGE_LABELS, STATE_LABELS } from "./build-copy.js";
+import { loadResult, resultNodes } from "./build-result.js";
 import { h, replace, statusLine } from "./dom.js";
 
 const POLL_MS = 2000;
+const MAX_BACKOFF_MS = 30_000;
+/** Timbre samples kept for the ETA: a sliding window, so speed changes show up. */
+const ETA_WINDOW = 20;
 
 const parseTime = (iso) => (iso ? Date.parse(iso) : NaN);
 
@@ -96,7 +92,8 @@ export function createJobView(onChange) {
   let token = 0;
   let paused = true;
   let resultFor = "";
-  let pollFailed = false;
+  let failures = 0;
+  let focusResult = false;
 
   const halt = () => {
     clearTimeout(timer);
@@ -108,22 +105,28 @@ export function createJobView(onChange) {
     clearTimeout(timer);
     if (paused || !job || !ACTIVE_STATES.has(job.state)) return;
     const mine = token;
+    // Back off on errors (2, 4, 8 … up to 30 s); back to 2 s after a success.
+    const delay = failures ? Math.min(MAX_BACKOFF_MS, POLL_MS * 2 ** failures) : POLL_MS;
     timer = setTimeout(async () => {
       try {
         const next = await api.job(job.id);
         if (mine === token) {
-          if (pollFailed) status.clear();
-          pollFailed = false;
+          if (failures) status.clear();
+          failures = 0;
           update(next);
         }
       } catch (err) {
         if (mine === token) {
-          pollFailed = true;
-          status.set(`Could not refresh the build: ${err.message}`, "error");
+          failures++;
+          const wait = Math.min(MAX_BACKOFF_MS, POLL_MS * 2 ** failures) / 1000;
+          status.set(
+            `Could not refresh the build: ${err.message}. Retrying in ${wait} s.`,
+            "error",
+          );
         }
       }
       if (mine === token) schedule();
-    }, POLL_MS);
+    }, delay);
   }
 
   function tickElapsed() {
@@ -134,6 +137,9 @@ export function createJobView(onChange) {
 
   function update(next) {
     const before = job?.state;
+    // A control that is about to disappear must not take the keyboard focus with it.
+    const focusedAction = actions.contains(document.activeElement);
+    const focusedFinish = finishGroup.contains(document.activeElement);
     job = next;
     const p = job.progress;
     const active = ACTIVE_STATES.has(job.state);
@@ -162,6 +168,7 @@ export function createJobView(onChange) {
       const at = parseTime(p.at);
       const last = samples[samples.length - 1];
       if (!last || p.step > last.step) samples.push({ step: p.step, at });
+      if (samples.length > ETA_WINDOW) samples.shift();
     }
     const timbre = job.state === "running" && p?.stage === "timbre" && !job.stopping;
     const secs = estimateSecondsLeft(samples, p?.total);
@@ -174,6 +181,11 @@ export function createJobView(onChange) {
     actions.hidden = !active;
     finishGroup.hidden = !timbre;
     if (!active) replace(confirm);
+    if ((focusedAction && actions.hidden) || (focusedFinish && finishGroup.hidden)) {
+      // Park focus on the title; if the build then succeeds, it moves on to Try it.
+      focusResult = true;
+      title.focus();
+    }
     if (job.state === "failed") status.set(job.error?.message || "The build failed.", "error");
     else if (job.state === "cancelled") status.set("This build was cancelled.", "info");
     else if (!active) status.clear();
@@ -187,38 +199,13 @@ export function createJobView(onChange) {
     resultFor = done.id;
     replace(result, h("p", { text: `${done.request.name} is ready.` }));
     if (!done.voice_id) return;
-    let languages = [];
-    let voice = null;
-    try {
-      [languages] = await Promise.all([getLanguages(), refreshVoices()]);
-      voice = (await getVoices()).find((v) => v.id === done.voice_id) || null;
-    } catch (err) {
-      status.set(err.message, "error");
-    }
-    if (job !== done) return;
-    const lang = h(
-      "select",
-      { class: "compact", "aria-label": "Language to try" },
-      languages.map((l) => h("option", { value: l.code, text: `${l.name} (${l.code})` })),
-    );
-    lang.value = "en";
-    const vid = encodeURIComponent(done.voice_id);
-    const tryIt = h("a", { class: "btn primary", text: "Try it" });
-    const setHref = () => (tryIt.href = `#/speak?voice=${vid}&language=${lang.value}`);
-    lang.addEventListener("change", setHref);
-    setHref();
-    replace(
-      result,
-      h("p", { text: `${done.request.name} is ready as ${done.voice_id}.` }),
-      voice?.build ? buildFacts(voice.build) : null,
-      h(
-        "div",
-        { class: "row" },
-        lang,
-        tryIt,
-        h("a", { class: "btn", href: `#/voices?voice=${vid}`, text: "Open voice card" }),
-      ),
-    );
+    const data = await loadResult(done.voice_id);
+    if (data.error) status.set(data.error, "error");
+    if (job?.id !== done.id) return;
+    const { nodes, tryIt } = resultNodes(done, data);
+    replace(result, nodes);
+    if (focusResult && document.activeElement === title) tryIt.focus();
+    focusResult = false;
   }
 
   async function act(button, call) {
@@ -261,6 +248,8 @@ export function createJobView(onChange) {
       halt();
       if (!job || job.id !== next.id) {
         samples = [];
+        failures = 0;
+        focusResult = false;
         resultFor = "";
         replace(result);
         replace(confirm);

@@ -52,7 +52,7 @@ export function buildClips(onError) {
     h("p", {
       class: "hint",
       id: "clip-hint",
-      text: `Drop up to ${MAX_FILES} audio files here, or choose them. One speaker only, little background noise. ${MIN_SECONDS} to ${MAX_SECONDS} seconds of speech in total, up to 25 MB.`,
+      text: `Drop up to ${MAX_FILES} audio files here, or choose them. One speaker only, little background noise, up to 25 MB in total. The server checks for ${MIN_SECONDS} to ${MAX_SECONDS} seconds of speech after trimming silence.`,
     }),
     input,
   );
@@ -113,9 +113,10 @@ export function buildClips(onError) {
     let text = `${files.length} of ${MAX_FILES} recordings, ${mb(bytes)}`;
     if (known) text += `, about ${Math.round(secs)} s`;
     if (bytes > MAX_BYTES) text += ". That is over the 25 MB limit.";
-    else if (known && secs < MIN_SECONDS) text += `. That is under ${MIN_SECONDS} seconds.`;
+    else if (known && secs < MIN_SECONDS)
+      text += `. The server needs at least ${MIN_SECONDS} seconds of speech.`;
     else if (known && secs > MAX_SECONDS) {
-      text += `. More than ${MAX_SECONDS} seconds of speech (after silence is trimmed) is rejected.`;
+      text += `. The server rejects more than ${MAX_SECONDS} seconds of speech after trimming silence.`;
     }
     summary.textContent = text;
   }

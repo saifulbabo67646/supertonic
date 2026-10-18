@@ -66,8 +66,13 @@ export function buildRecorder(onChange) {
   );
   let take = null;
   let session = null;
+  /** Bumped by cancel(); a microphone request from an older attempt is thrown away. */
+  let attempt = 0;
+  let asking = false;
 
   function idle() {
+    // When the focused control (e.g. Stop recording) is replaced, focus the new Record button.
+    const hadFocus = body.contains(document.activeElement);
     const reason = unsupportedReason();
     const start = h("button", {
       type: "button",
@@ -79,6 +84,7 @@ export function buildRecorder(onChange) {
     if (reason) status.set(reason, "info");
     if (!take) {
       replace(body, h("div", { class: "row" }, start));
+      if (hadFocus) start.focus();
       return;
     }
     const player = h("audio", { controls: true, preload: "metadata", src: slot.url });
@@ -97,17 +103,32 @@ export function buildRecorder(onChange) {
       h("div", { class: "player-row" }, player),
       h("div", { class: "row" }, start, remove),
     );
+    if (hadFocus) start.focus();
   }
 
-  async function begin() {
+  async function begin(event) {
+    if (asking || session) return;
+    asking = true;
+    event.currentTarget.disabled = true;
+    const mine = ++attempt;
     status.set("Waiting for microphone permission…", "busy");
     let stream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch (err) {
-      status.set(micError(err), "error");
+      if (mine === attempt) {
+        asking = false;
+        status.set(micError(err), "error");
+        idle();
+      }
       return;
     }
+    if (mine !== attempt) {
+      // The screen was left (or the recorder reset) while the permission prompt was open.
+      stream.getTracks().forEach((t) => t.stop());
+      return;
+    }
+    asking = false;
     let recorder;
     try {
       const type = pickType();
@@ -115,6 +136,7 @@ export function buildRecorder(onChange) {
     } catch (err) {
       stream.getTracks().forEach((t) => t.stop());
       status.set(`Could not start recording: ${err.message}`, "error");
+      idle();
       return;
     }
     const chunks = [];
@@ -156,6 +178,7 @@ export function buildRecorder(onChange) {
     let analyser = null;
     try {
       s.ctx = new AudioContext();
+      s.ctx.resume().catch(() => {}); // Safari starts contexts suspended
       analyser = s.ctx.createAnalyser();
       analyser.fftSize = 1024;
       s.ctx.createMediaStreamSource(s.stream).connect(analyser);
@@ -210,6 +233,12 @@ export function buildRecorder(onChange) {
 
   /** Stop any recording in progress and throw it away (e.g. when leaving the screen). */
   function cancel() {
+    attempt++;
+    if (asking) {
+      asking = false;
+      status.clear();
+      idle();
+    }
     const s = session;
     if (!s) return;
     s.keep = false;

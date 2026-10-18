@@ -15,9 +15,11 @@ arguments. Behaviour comes from the environment:
   - ``hang``: starts a sleeping child process (the "tree"), then sleeps, ignoring the stop file.
   - ``crash``: a progress event and a traceback on stderr, then exit code 3, no terminal event.
   - ``error:<code>``: an error event with ``code`` (exit code 1).
-  - ``slow``: every stage, with ``FAKE_BUILDER_STEPS`` (default 30) ``timbre`` steps of
-    ``FAKE_BUILDER_STEP_S`` seconds (default 0.5) each; the stop file ends the steps early.
-    For trying the web UI by hand (progress, ETA, Finish now, Cancel).
+  - ``slow``: ``loading`` and ``preset``, then ``FAKE_BUILDER_STEPS`` (default 30) ``timbre``
+    steps of ``FAKE_BUILDER_STEP_S`` seconds (default 0.5) each, then ``duration`` and
+    ``saving`` (the non-step stages last two step delays each), then ``done``. The stop file
+    ends the steps early (``stopped_early`` true); the report adds ``similarity`` for
+    ``accurate``. For trying the web UI by hand (progress, ETA, Finish now, Cancel).
 """
 
 from __future__ import annotations

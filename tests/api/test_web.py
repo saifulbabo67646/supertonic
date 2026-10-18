@@ -23,6 +23,7 @@ WEB = Path(str(files("supertonic_server") / "web"))
         ("/js/build-job.js", "text/javascript", "Stop and keep the best result so far"),
         ("/js/build-copy.js", "text/javascript", "Best match — about 1½ hours"),
         ("/js/voice-clips.js", "text/javascript", "dataTransfer"),
+        ("/js/build-result.js", "text/javascript", "Open voice card"),
         ("/js/voice-record.js", "text/javascript", "MediaRecorder"),
     ],
 )

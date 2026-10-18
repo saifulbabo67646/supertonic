@@ -190,6 +190,12 @@ async function refreshJobs() {
 
 /** Build the screen once. */
 export function mount(root) {
+  // A file dropped just outside the drop zone must not make the browser open it and leave the page.
+  const guard = (e) => {
+    if (!root.hidden && e.dataTransfer?.types?.includes("Files")) e.preventDefault();
+  };
+  window.addEventListener("dragover", guard);
+  window.addEventListener("drop", guard);
   ui.job = createJobView(() => refreshJobs());
   ui.jobs = h("div", { class: "jobs" });
   ui.unavailable = h("p", { class: "notice panel", hidden: true, text: NO_BUILDER_TEXT });
