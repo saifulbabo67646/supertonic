@@ -46,7 +46,8 @@ def _infer_shapes_in_memory(model: Any) -> Any:
         model = onnx.load(str(model))
     try:
         return shape_inference.infer_shapes(model)
-    except Exception:  # shape inference is an optimisation; convert without it
+    except Exception as exc:  # shape inference is an optimisation; convert without it
+        logger.warning("ONNX shape inference failed, converting without it: %s", exc)
         return model
 
 

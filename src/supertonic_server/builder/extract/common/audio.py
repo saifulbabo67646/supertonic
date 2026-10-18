@@ -9,6 +9,18 @@ import numpy as np
 import soundfile as sf
 
 
+def check_readable(path: Path) -> None:
+    """Fail fast, before any model loads, when ``path`` is missing or not decodable audio."""
+    if not Path(path).is_file():
+        raise FileNotFoundError(f"reference recording not found: {path}")
+    try:
+        info = sf.info(str(path))
+    except Exception as exc:  # soundfile raises its own error types per backend
+        raise ValueError(f"reference recording is not readable audio: {path} ({exc})") from exc
+    if info.frames <= 0:
+        raise ValueError(f"reference recording is empty: {path}")
+
+
 def load_mono(path: Path, sr: int) -> np.ndarray:
     """Decode ``path`` with soundfile, mix to mono and resample to ``sr``. -> float32 [N]."""
     data, file_sr = sf.read(str(path), dtype="float32", always_2d=True)

@@ -19,9 +19,12 @@ from supertonic_server.builder.extract.base import (
     Report,
     StopCheck,
     StyleJson,
+    check_stop,
+    make_report,
     progress,
 )
 from supertonic_server.builder.extract.common import (
+    check_readable,
     duration_inversion,
     list_presets,
     load_frozen_tts,
@@ -35,11 +38,6 @@ from supertonic_server.builder.extract.fast.invert_ttl import invert, nearest_pr
 from supertonic_server.builder.extract.fast.wavlm_loss import load_wavlm, target_from_file
 
 logger = logging.getLogger(__name__)
-
-
-def _check_stop(should_stop: StopCheck) -> None:
-    if should_stop():
-        raise NothingToSaveError("stopped before a starting voice was chosen; nothing to save")
 
 
 def extract_style(
@@ -57,6 +55,7 @@ def extract_style(
     """
     cfg = config or FastConfig()
     dev = torch.device(device)
+    check_readable(wav_path)
     presets = list_presets(model_dir)
 
     on_progress(progress("loading", "converting Supertonic 3 to PyTorch"))
@@ -64,10 +63,10 @@ def extract_style(
     tts = load_frozen_tts(
         model_dir / "onnx", dev, total_step=m.total_step, speed=m.speed, seed=m.seed
     )
-    _check_stop(should_stop)
+    check_stop(should_stop, "while loading Supertonic")
     on_progress(progress("loading", "loading WavLM-Large"))
     wavlm = load_wavlm(dev)
-    _check_stop(should_stop)
+    check_stop(should_stop, "while loading WavLM")
     _, sizing_dp = load_style(preset_path(model_dir, m.sizing_preset), dev)
     prompts = tts.build_prompts(cfg.prompts, sizing_dp)
     target = target_from_file(wavlm, wav_path, cfg.timbre.layer, dev)
@@ -119,16 +118,13 @@ def extract_style(
         on_progress=on_progress,
         should_stop=should_stop,
     )
-    stopped = preset_stopped or timbre.stopped or duration["status"] == "stopped"
-    report: Report = {
-        "method": "fast",
-        "preset_start": path.stem,
-        "preset_distance": round(distance, 4),
-        "loss": round(timbre.loss, 4),
-        "steps": timbre.steps,
-        "duration_status": duration["status"],
-        "rate_ref": duration.get("rate_ref"),
-        "rate_final": duration.get("rate_final"),
-        "stopped_early": stopped,
-    }
+    report = make_report(
+        "fast",
+        preset_start=path.stem,
+        preset_distance=distance,
+        loss=timbre.loss,
+        steps=timbre.steps,
+        duration=duration,
+        stopped_early=preset_stopped or timbre.stopped,
+    )
     return style_to_json(timbre.ttl, dp, source=Path(wav_path).name), report

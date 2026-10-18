@@ -17,6 +17,7 @@ from supertonic_server.builder.extract.base import (
     Report,
     StopCheck,
     StyleJson,
+    make_report,
     progress,
 )
 from supertonic_server.builder.models import BUILD_METHODS, BuildMethod
@@ -65,15 +66,14 @@ def extract_style(
         if should_stop():
             stopped = True
             break
-    report: Report = {
-        "method": method,
-        "preset_start": "F1",
-        "preset_distance": 0.5,
-        "loss": 0.5,
-        "steps": 1 if stopped else FAKE_STEPS,
-        "duration_status": "stopped" if stopped else "converged",
-        "rate_ref": 3.0,
-        "rate_final": 3.0,
-        "stopped_early": stopped,
-    }
+    duration = {"status": "stopped" if stopped else "converged", "rate_ref": 3.0, "rate_final": 3.0}
+    report = make_report(
+        method,
+        preset_start="F1",
+        preset_distance=0.5,
+        loss=0.5,
+        steps=1 if stopped else FAKE_STEPS,
+        duration=duration,
+        stopped_early=stopped,
+    )
     return make_style(source=Path(wav_path).name), report

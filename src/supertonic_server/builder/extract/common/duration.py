@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
-from dataclasses import dataclass
 from typing import Any
 
 import librosa
@@ -31,23 +30,9 @@ from scipy.signal import find_peaks
 
 from supertonic_server.builder.extract.base import ProgressCallback, StopCheck, progress
 from supertonic_server.builder.extract.common.frozen_tts import SR, FrozenTTS, Prompt
+from supertonic_server.builder.extract.duration_config import DurationConfig
 
 RATE_SR = 16000  # rate detector sample rate
-
-
-@dataclass(frozen=True)
-class DurationConfig:
-    """supertonic.embed's ``duration`` settings (``src/config.yaml``)."""
-
-    tolerance: float = 0.03  # converged when |rate_synth / rate_ref - 1| is under this
-    max_iters: int = 8  # fixed-point budget; not a bound on the answer
-    max_log_step: float = 0.6931  # ln 2: at most one octave of duration per iteration
-    min_response_move: float = 0.10  # measure the model's slope only over moves this large
-    saturation_move: float = 0.20  # judge saturation only past this total excursion
-    saturation_slope: float = -0.2  # d log(rate) / d log(duration) above this = saturated
-    invert_steps: int = 300  # Adam steps for the duration-predictor inversion
-    invert_lr: float = 5.0e-3
-    invert_prior: float = 1.0e-2  # pull toward the starting dp, so the answer stays plausible
 
 
 def nuclei_rate(

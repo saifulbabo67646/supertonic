@@ -8,7 +8,7 @@ per line to stdout:
 - then exactly one of ``{"type": "done", "report": {...}}`` (exit code 0) or
   ``{"type": "error", "code": ..., "message": ...}`` (exit code 1), with ``code`` one of
   ``cuda_unavailable``, ``out_of_memory``, ``extract_failed``, ``missing_dependencies``,
-  ``nothing_to_save``.
+  ``nothing_to_save``, ``bad_arguments``.
 
 Logs go to stderr. Creating the ``--stop-file`` asks the extractor to stop optimising and
 save the best style so far. ``--self-test`` prints a single ``probe`` line describing torch,
@@ -27,7 +27,7 @@ import sys
 from contextlib import redirect_stdout
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any, Protocol, TextIO
+from typing import Any, NoReturn, Protocol, TextIO
 
 from supertonic_server.builder.extract.base import (
     NothingToSaveError,
@@ -71,6 +71,13 @@ class WorkerError(Exception):
         super().__init__(message)
         self.code = code
         self.message = message
+
+
+class _Parser(argparse.ArgumentParser):
+    """Argument errors become a ``bad_arguments`` protocol error instead of exit 2."""
+
+    def error(self, message: str) -> NoReturn:
+        raise WorkerError("bad_arguments", message)
 
 
 # Where protocol lines go. ``main`` points it at stdout; the ``__main__`` entry hands it a
@@ -179,7 +186,7 @@ def _importable(modules: tuple[str, ...]) -> bool:
 
 
 def _parser() -> argparse.ArgumentParser:
-    ap = argparse.ArgumentParser(
+    ap = _Parser(
         prog="python -m supertonic_server.builder.worker",
         description="Build one Supertonic 3 voice style; JSON lines on stdout.",
     )
@@ -195,9 +202,10 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _setup_io() -> None:
-    reconfigure = getattr(sys.stdout, "reconfigure", None)
-    if reconfigure is not None:
-        reconfigure(encoding="utf-8")
+    for stream, errors in ((sys.stdout, "strict"), (sys.stderr, "backslashreplace")):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors=errors)
     if not logging.getLogger().handlers:
         logging.basicConfig(
             stream=sys.stderr, level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
@@ -238,8 +246,8 @@ def main(argv: list[str] | None = None, out: TextIO | None = None) -> int:
     _setup_io()
     _out = out if out is not None else sys.stdout
     ap = _parser()
-    args = ap.parse_args(argv)
     try:
+        args = ap.parse_args(argv)
         if args.self_test:
             with redirect_stdout(sys.stderr):
                 probe = _probe()
@@ -253,7 +261,10 @@ def main(argv: list[str] | None = None, out: TextIO | None = None) -> int:
         return 0
     except Exception as exc:
         err = _error_for(exc)
-        logger.exception("build failed: %s", err.code)
+        if isinstance(exc, WorkerError | NothingToSaveError):
+            logger.error("build failed: %s: %s", err.code, err.message)
+        else:
+            logger.exception("build failed: %s", err.code)
         _emit({"type": "error", "code": err.code, "message": err.message})
         return 1
 

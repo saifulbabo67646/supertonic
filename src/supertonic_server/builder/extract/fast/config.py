@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from supertonic_server.builder.extract.common.duration import DurationConfig
+from supertonic_server.builder.extract.duration_config import DurationConfig
 
 WAVLM_REPO = "microsoft/wavlm-large"
 WAVLM_SR = 16000  # what WavLM expects

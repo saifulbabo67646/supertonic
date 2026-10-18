@@ -2,8 +2,8 @@
 reference loading and the duration-style inversion. Importing this package imports torch.
 """
 
-from supertonic_server.builder.extract.common.audio import load_mono
-from supertonic_server.builder.extract.common.duration import DurationConfig, duration_inversion
+from supertonic_server.builder.extract.common.audio import check_readable, load_mono
+from supertonic_server.builder.extract.common.duration import duration_inversion
 from supertonic_server.builder.extract.common.frozen_tts import (
     SR,
     FrozenTTS,
@@ -19,6 +19,7 @@ from supertonic_server.builder.extract.common.style_file import (
     project_to_sphere,
     style_to_json,
 )
+from supertonic_server.builder.extract.duration_config import DurationConfig
 
 __all__ = [
     "DP_SHAPE",
@@ -27,6 +28,7 @@ __all__ = [
     "DurationConfig",
     "FrozenTTS",
     "Prompt",
+    "check_readable",
     "duration_inversion",
     "list_presets",
     "load_frozen_tts",

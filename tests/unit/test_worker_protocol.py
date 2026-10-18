@@ -227,15 +227,41 @@ def test_fake_self_test_probe_lists_both_methods() -> None:
     assert isinstance(probe["vram_mb"], int)
 
 
-def test_missing_required_args_exit_nonzero() -> None:
-    code, _, _ = _run(["--method", "fast"])
+def test_missing_required_args_is_bad_arguments() -> None:
+    code, lines, _ = _run(["--method", "fast"])
     assert code != 0
+    assert len(lines) == 1
+    assert lines[0]["type"] == "error"
+    assert lines[0]["code"] == "bad_arguments"
+    assert "--wav" in lines[0]["message"]
 
 
-def test_unknown_method_is_rejected(job: dict[str, Path]) -> None:
-    code, _, _ = _run(_args(job, "slow"))
+def test_unknown_method_is_bad_arguments(job: dict[str, Path]) -> None:
+    code, lines, _ = _run(_args(job, "slow"))
     assert code != 0
+    assert lines == [{"type": "error", "code": "bad_arguments", "message": lines[0]["message"]}]
+    assert "slow" in lines[0]["message"]
     assert not job["out"].exists()
+
+
+def test_server_app_does_not_import_builder_deps() -> None:
+    heavy = ("torch", "torchaudio", "transformers", "speechbrain", "onnx2torch")
+    probe = (
+        "import sys, json\n"
+        "import supertonic_server.api.app\n"
+        "import supertonic_server.builder\n"
+        f"print(json.dumps([m for m in {heavy!r} if m in sys.modules]))\n"
+    )
+    proc = subprocess.run(
+        [sys.executable, "-c", probe],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env=_env(False),
+        timeout=120,
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert json.loads(proc.stdout.strip().splitlines()[-1]) == []
 
 
 class OutOfMemoryError(RuntimeError):

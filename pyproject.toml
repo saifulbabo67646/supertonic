@@ -115,7 +115,10 @@ ignore_missing_imports = true
 # The extractors are numeric code over torch, which is `Any` when the extra is not
 # installed (CI) and typed when it is: allow Any to flow and keep both setups clean.
 [[tool.mypy.overrides]]
-module = ["supertonic_server.builder.extract.*"]
+module = [
+  "supertonic_server.builder.extract.common.*",
+  "supertonic_server.builder.extract.fast.*",
+]
 warn_return_any = false
 disallow_subclassing_any = false
 disallow_any_generics = false

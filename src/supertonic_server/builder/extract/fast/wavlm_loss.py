@@ -3,7 +3,8 @@
 # Copyright (c) 2026 Gyeongmin Kim. MIT License (see LICENSE-supertonic-embed).
 # Adapted: upstream's TLS-verification bypass (httpx monkeypatch) and its removal of
 # certificate environment variables are deliberately NOT included; device and layer are
-# arguments; the reference is decoded with soundfile; typed.
+# arguments; the reference is decoded with soundfile; transformers is imported lazily;
+# typed.
 """The objective the timbre is inverted against: WavLM layer statistics.
 
 A voice is the mean and standard deviation over time of one WavLM-Large layer. Pooling
@@ -19,7 +20,6 @@ from typing import Any
 
 import torch
 import torch.nn.functional as F
-from transformers import WavLMModel
 
 from supertonic_server.builder.extract.common.audio import load_mono
 from supertonic_server.builder.extract.common.frozen_tts import SR
@@ -30,6 +30,8 @@ Stats = tuple[torch.Tensor, torch.Tensor]
 
 def load_wavlm(device: torch.device) -> Any:
     """WavLM-Large, frozen (downloaded to the Hugging Face cache on first use)."""
+    from transformers import WavLMModel  # imported here so the loss maths needs only torch
+
     model = WavLMModel.from_pretrained(WAVLM_REPO).to(device).eval()  # type: ignore[arg-type]
     for p in model.parameters():
         p.requires_grad_(False)
