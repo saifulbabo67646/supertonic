@@ -3,15 +3,22 @@
 from __future__ import annotations
 
 import json
+from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import httpx
 import pytest
 from supertonic.core import Style
 
+from supertonic_server.api import create_app
+from supertonic_server.core.config import Settings
 from supertonic_server.voices import VoiceLibrary
 
 if TYPE_CHECKING:
+    from fastapi import FastAPI
+    from httpx import AsyncClient
+
     from supertonic_server.engine import Engine
 
 
@@ -52,3 +59,32 @@ def engine() -> Engine:
     from supertonic_server.engine import Engine, Scheduler
 
     return Engine(FakeModel(), Scheduler(workers=2, max_queue=64))
+
+
+@pytest.fixture
+def settings(tmp_path: Path) -> Settings:
+    """Loopback settings with an isolated data dir and no API key."""
+    return Settings(data_dir=tmp_path / "data")
+
+
+def _client(app: FastAPI) -> httpx.AsyncClient:
+    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
+
+
+@pytest.fixture
+async def client(
+    settings: Settings, engine: Engine, lib: VoiceLibrary
+) -> AsyncIterator[AsyncClient]:
+    """Client for an app without authentication."""
+    async with _client(create_app(settings, engine, lib)) as c:
+        yield c
+
+
+@pytest.fixture
+async def authed_client(
+    settings: Settings, engine: Engine, lib: VoiceLibrary
+) -> AsyncIterator[AsyncClient]:
+    """Client for an app that requires the API key ``"secret"``."""
+    keyed = settings.model_copy(update={"api_key": "secret"})
+    async with _client(create_app(keyed, engine, lib)) as c:
+        yield c
