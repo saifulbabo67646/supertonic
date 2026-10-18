@@ -135,8 +135,17 @@ class Builder(Protocol):
     """What the API needs from a voice builder (a local ``JobManager`` or a remote forwarder)."""
 
     @property
+    def kind(self) -> Literal["local", "remote"]:
+        """``local`` (builds on this machine) or ``remote`` (forwards to another server)."""
+        ...
+
+    @property
     def methods(self) -> tuple[BuildMethod, ...]:
         """Build methods this builder can run."""
+        ...
+
+    def detail(self) -> dict[str, Any]:
+        """What ``GET /v1/health`` reports as ``builder_detail``."""
         ...
 
     async def start(self) -> None:

@@ -200,14 +200,16 @@ curl -s -X POST http://127.0.0.1:8787/v1/jobs/3f2c.../finish  # stop optimising,
 `finish` makes a running job succeed early with `build.stopped_early: true`.
 
 With `SUPERTONIC_BUILDER_URL` (and `SUPERTONIC_BUILDER_API_KEY` when the builder has an API
-key) a machine without a GPU forwards each build to that server. The builder's health is
-checked first: if it cannot be reached or has no local builder the request fails at once
-with `503 builder_unavailable` (nothing is queued for later). The builder validates the
-request, so its errors (`consent_required`, `invalid_reference_audio`,
-`method_unavailable`, ...) come back unchanged. The forwarding server keeps its own job
+key) a machine without a GPU forwards each build to that server. The request itself
+(`name`, `consent`, `source_note`, ...) is validated locally first; then the builder's health is
+checked: if it cannot be reached or has no local builder the request fails at once
+with `503 builder_unavailable` (nothing is queued for later). The builder checks the
+audio and the method, so its errors (`invalid_reference_audio`, `method_unavailable`, ...)
+come back unchanged. The forwarding server keeps its own job
 (`builder` is `remote:<host:port>`, `remote_id` is the builder's job id), polls the builder
 every 3 s, and on success imports the voice into its own library (`voice_id`; the builder's
-copy is `remote_voice_id`) with `build.builder` set to `remote:<host:port>`. If the builder
+copy is `remote_voice_id`) with `build.builder` set to `remote:<host:port>` and `build.remote_job_id` naming the
+builder's job (an import is never repeated for the same job). If the builder
 cannot be reached for 2 minutes the job fails with `builder_lost` and nothing is imported.
 `cancel` and `finish` are passed on to the builder. After a restart the forwarding server
 resumes following jobs that were still queued or running.

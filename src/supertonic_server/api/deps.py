@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from fastapi import Request
 
@@ -32,7 +32,6 @@ class AppState:
     engine: Engine
     library: VoiceLibrary
     builder: Builder | None = None
-    builder_detail: dict[str, Any] | None = None
     preview_locks: dict[tuple[str, str], asyncio.Lock] = field(default_factory=dict)
 
 

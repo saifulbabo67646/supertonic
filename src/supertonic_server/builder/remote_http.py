@@ -35,8 +35,12 @@ def host_of(base_url: str) -> str:
 
 
 def _reason(exc: httpx.HTTPError) -> str:
-    text = str(exc).strip()
-    return f"{type(exc).__name__}: {text}" if text else type(exc).__name__
+    """Why a request failed, without the URL (it may carry credentials) or the exception text."""
+    if isinstance(exc, httpx.TimeoutException):
+        return "the connection timed out"
+    if isinstance(exc, httpx.ConnectError):
+        return "could not connect (refused, or host not found)"
+    return f"the connection failed ({type(exc).__name__})"
 
 
 class BuilderClient:
@@ -145,6 +149,8 @@ class BuilderClient:
             param = err.get("param")
             type_ = str(err.get("type") or "invalid_request_error")
         except (ValueError, KeyError, TypeError):
+            if status >= 500:  # up but broken (a proxy page, a crash): it cannot build
+                return self.unreachable(f"it answered HTTP {status}")
             return ApiError(
                 502,
                 "builder_error",

@@ -20,7 +20,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from supertonic_server.builder.audio_prep import prepare_reference
 from supertonic_server.builder.jobstore import (
@@ -69,7 +69,11 @@ class JobManager:
         max_waiting: Queued (not running) jobs allowed before ``builder_busy``.
         methods: Build methods this machine can run.
         worker_cmd: Command replacing ``python -m supertonic_server.builder.worker`` (tests).
+        device: GPU name reported by health (``None`` when unknown).
+        vram_mb: GPU memory reported by health (``None`` when unknown).
     """
+
+    kind: Literal["local"] = "local"
 
     def __init__(
         self,
@@ -82,7 +86,10 @@ class JobManager:
         max_waiting: int = 8,
         methods: Sequence[BuildMethod] = BUILD_METHODS,
         worker_cmd: Sequence[str] | None = None,
+        device: str | None = None,
+        vram_mb: int | None = None,
     ) -> None:
+        self._device, self._vram_mb = device, vram_mb
         self._root = data_dir / "jobs"
         self._library = library
         self._model_dir = model_dir
@@ -101,6 +108,10 @@ class JobManager:
     def methods(self) -> tuple[BuildMethod, ...]:
         """Build methods this builder can run."""
         return self._methods
+
+    def detail(self) -> dict[str, Any]:
+        """Health detail: ``{"device", "vram_mb", "methods"}``."""
+        return {"device": self._device, "vram_mb": self._vram_mb, "methods": list(self._methods)}
 
     async def start(self) -> None:
         """Load jobs from disk (interrupted ones fail, old ones are pruned); start the runner."""

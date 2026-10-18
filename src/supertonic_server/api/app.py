@@ -11,7 +11,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from supertonic_server.api.builder_boot import detail_for, start_builder
+from supertonic_server.api.builder_boot import start_builder
 from supertonic_server.api.deps import AppState
 from supertonic_server.api.errors import install_error_handlers
 from supertonic_server.api.guard import Guard
@@ -32,7 +32,7 @@ def create_app(
 
     When ``engine``/``library`` are omitted they are loaded during startup, and the voice
     builder is chosen from the settings. An injected ``builder`` (tests) is used as is: it is
-    neither probed nor started or closed here, and health reports only its methods.
+    neither probed nor started or closed here.
     """
     if (engine is None) != (library is None):
         raise ValueError("pass both engine and library, or neither")
@@ -52,9 +52,7 @@ def create_app(
         try:
             if loaded:
                 state = app.state.app_state
-                state.builder, state.builder_detail = await start_builder(
-                    settings, state.library, presets.parent
-                )
+                state.builder = await start_builder(settings, state.library, presets.parent)
             yield
         finally:
             if loaded:
@@ -67,8 +65,7 @@ def create_app(
 
     app = FastAPI(title="Supertonic Server", lifespan=lifespan)
     if engine is not None and library is not None:
-        detail = detail_for(builder) if builder is not None else None
-        app.state.app_state = AppState(settings, engine, library, builder, detail)
+        app.state.app_state = AppState(settings, engine, library, builder)
     install_error_handlers(app)
     # Auth, the forwarded-header check and the body cap run before routing and parsing.
     app.add_middleware(Guard, api_key=settings.api_key)

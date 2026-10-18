@@ -1,14 +1,13 @@
 """Forward voice builds to a remote builder and import the finished voices locally.
 
 A machine without a GPU sets ``SUPERTONIC_BUILDER_URL`` to another Supertonic server that
-has a local builder. :class:`RemoteBuilder` checks that server's health, forwards the build,
-keeps a local mirror job (``data_dir/jobs/<id>/job.json`` with ``remote_id``) and polls the
-remote job. When it succeeds, the style and its ``build`` metadata are fetched and imported
-into the local library with ``builder: "remote:<host>"``.
+has a local builder. :class:`RemoteBuilder` validates the request, checks that server's
+health, forwards the build, keeps a local mirror job (``data_dir/jobs/<id>/job.json`` with
+``remote_id``) and polls the remote job; on success the voice is imported locally with
+``builder: "remote:<host>"`` (see :mod:`.remote_import`).
 
-If polling keeps failing for ``lost_after_s`` the local job fails with ``builder_lost`` and
-nothing is imported (the remote may still finish; its voice stays there). After a restart,
-mirror jobs still queued or running resume polling: the remote job kept running.
+If polling keeps failing for ``lost_after_s`` the job fails ``builder_lost`` and nothing is
+imported. After a restart, mirror jobs still queued or running resume polling.
 """
 
 from __future__ import annotations
@@ -17,31 +16,28 @@ import asyncio
 import builtins
 import contextlib
 import logging
-import time
 import uuid
 from collections.abc import Sequence
 from datetime import timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 
 from supertonic_server.builder.jobstore import load_jobs, now_iso, write_job
 from supertonic_server.builder.models import BUILD_METHODS, BuildMethod, BuildRequest, Job, JobState
 from supertonic_server.builder.remote_http import DEFAULT_TIMEOUT, BuilderClient, Unreachable
+from supertonic_server.builder.remote_poll import POLL_ERRORS, TERMINAL, RemotePolling
 from supertonic_server.core import errors
 from supertonic_server.core.errors import ApiError
-from supertonic_server.voices import Voice, VoiceLibrary
+from supertonic_server.voices import VoiceLibrary
 
 logger = logging.getLogger(__name__)
 
 PRUNE_AFTER = timedelta(days=7)
-TERMINAL = frozenset({"succeeded", "failed", "cancelled"})
-POLL_ERRORS = (Unreachable, ApiError, ValueError, KeyError, TypeError)
-"""A poll that raises one of these counts as a failed contact with the builder."""
 
 
-class RemoteBuilder:
+class RemoteBuilder(RemotePolling):
     """A :class:`~.models.Builder` that runs builds on another Supertonic server.
 
     Args:
@@ -53,6 +49,8 @@ class RemoteBuilder:
         poll_s: Seconds between polls of each active remote job.
         lost_after_s: How long polling may keep failing before the job fails ``builder_lost``.
     """
+
+    kind: Literal["remote"] = "remote"
 
     def __init__(
         self,
@@ -72,8 +70,7 @@ class RemoteBuilder:
         self.label = f"remote:{self.host}"
         self._library = library
         self._root = data_dir / "jobs"
-        self._poll_s = poll_s
-        self._lost_after_s = lost_after_s
+        self._poll_s, self._lost_after_s = poll_s, lost_after_s
         self._methods: tuple[BuildMethod, ...] = BUILD_METHODS
         self._jobs: dict[str, Job] = {}
         self._pollers: dict[str, asyncio.Task[None]] = {}
@@ -94,7 +91,10 @@ class RemoteBuilder:
         """Load mirror jobs (resuming active ones); fetch the remote's methods in the background.
 
         Never fails because the remote is down: reachability is checked at submit time.
+        Calling it again while started does nothing.
         """
+        if self._refresh is not None:
+            return
         self._root.mkdir(parents=True, exist_ok=True)
         self._closed = False
         for job in load_jobs(self._root, PRUNE_AFTER):
@@ -122,18 +122,19 @@ class RemoteBuilder:
     async def submit(
         self, req: BuildRequest, files: Sequence[tuple[str, bytes]], builder_label: str = "local"
     ) -> Job:
-        """Forward a build to the remote and start following it.
+        """Validate the request, then forward it to the remote and start following it.
 
-        The remote validates the request (its errors come back unchanged, e.g.
-        ``consent_required``, ``invalid_reference_audio``, ``method_unavailable``).
-        ``builder_label`` is ignored: forwarded jobs are always ``remote:<host>``.
+        The remote checks the audio and the method (``invalid_reference_audio`` and
+        ``method_unavailable`` come back unchanged). ``builder_label`` is ignored: forwarded
+        jobs are always ``remote:<host>``.
 
         Raises:
-            ApiError: 503 ``builder_unavailable`` when the remote is unreachable or has no
-                local builder; otherwise the remote's own error.
+            ApiError: 400 for a bad request (before any contact); 503 ``builder_unavailable``
+                when the remote is unreachable or has no local builder; else the remote's.
         """
         if self._closed:
             raise errors.builder_unavailable("Voice builder is shutting down")
+        req.validate()
         await self._check_health()
         try:
             remote = Job.from_dict(await self._client.submit(req, files))
@@ -147,7 +148,7 @@ class RemoteBuilder:
         )  # fmt: skip
         (self._root / job.id).mkdir(parents=True)
         self._jobs[job.id] = job
-        self._persist(job)
+        write_job(self._root / job.id, job)
         self._follow(job)
         return job
 
@@ -166,28 +167,32 @@ class RemoteBuilder:
         """Cancel the remote job, then mark the mirror ``cancelled``; finished jobs are unchanged.
 
         An unreachable remote still cancels locally (nothing will be imported). A job whose
-        result is being imported is left to finish.
+        remote finished first, or whose result is being imported, settles as usual.
         """
         job = self.get(job_id)
-        if job.state in TERMINAL:
+        if job.state in TERMINAL or job.remote_id is None:
             return job
-        poller = self._pollers.pop(job_id, None)
+        poller = self._pollers.get(job_id)
         if poller is not None:
             if job_id in self._importing:
                 await asyncio.gather(poller, return_exceptions=True)
                 return job
             poller.cancel()
             await asyncio.gather(poller, return_exceptions=True)
-        if job.state in TERMINAL or job.remote_id is None:
+        if job.state in TERMINAL:
             return job
         try:
             remote = Job.from_dict(await self._client.cancel(job.remote_id))
         except POLL_ERRORS as exc:
             logger.warning("job %s: could not cancel it on %s: %s", job.id, self.host, exc)
-        else:
-            if remote.state in ("succeeded", "failed"):  # it finished first: settle as usual
-                self._follow(job)
-                return job
+            remote = None
+        if job.state in TERMINAL:  # settled while the DELETE was in flight
+            return job
+        if remote is not None and remote.state in ("succeeded", "failed"):
+            self._follow(job, immediate=True)  # it finished first: settle as usual
+            return job
+        if job_id in self._pollers:  # a concurrent cancel restarted the poller
+            return job
         self._settle(job, "cancelled", None)
         return job
 
@@ -196,7 +201,7 @@ class RemoteBuilder:
 
         Raises:
             ApiError: 409 ``job_not_running`` for a queued job; 503 ``builder_unavailable``
-                when the remote cannot be reached.
+                when the remote cannot be reached; other remote errors name the local job.
         """
         job = self.get(job_id)
         if job.state in TERMINAL or job.remote_id is None:
@@ -206,12 +211,11 @@ class RemoteBuilder:
         except Unreachable as exc:
             raise self._client.unreachable(str(exc)) from exc
         except ApiError as exc:
-            if exc.code == "job_not_running":
-                raise errors.job_not_running(job_id) from exc
-            raise
+            message = exc.message.replace(job.remote_id, job.id)
+            raise ApiError(exc.status, exc.code, message, exc.param, exc.type) from exc
         if remote.stopping and not job.stopping:
             job.stopping = True
-            self._persist(job)
+            self._save(job)
         return job
 
     # -- internals ---------------------------------------------------------------------
@@ -226,93 +230,14 @@ class RemoteBuilder:
         with contextlib.suppress(ApiError):
             await self._check_health()
 
-    def _follow(self, job: Job) -> None:
-        task = asyncio.create_task(self._poll(job), name=f"remote-build-{job.id}")
-        self._pollers[job.id] = task
-
-        def forget(done: asyncio.Task[None]) -> None:
-            if self._pollers.get(job.id) is done:
-                del self._pollers[job.id]
-
-        task.add_done_callback(forget)
-
-    async def _poll(self, job: Job) -> None:
-        last_ok = time.monotonic()
-        while job.state not in TERMINAL:
-            await asyncio.sleep(self._poll_s)
-            try:
-                await self._poll_once(job)
-                last_ok = time.monotonic()
-            except POLL_ERRORS as exc:
-                gone = isinstance(exc, ApiError) and exc.code == "job_not_found"
-                if gone or time.monotonic() - last_ok >= self._lost_after_s:
-                    why = "it no longer knows this job" if gone else str(exc)
-                    message = f"Lost the voice builder at {self.host}: {why}"
-                    self._settle(job, "failed", {"code": "builder_lost", "message": message})
-            except Exception as exc:  # never leave a mirror job hanging
-                logger.exception("job %s: polling %s crashed", job.id, self.host)
-                self._settle(job, "failed", {"code": "internal_error", "message": str(exc)})
-
-    async def _poll_once(self, job: Job) -> None:
-        if job.remote_id is None:
-            raise TypeError("job has no remote id")
-        remote = Job.from_dict(await self._client.job(job.remote_id))
-        if remote.state == "succeeded":
-            if remote.voice_id is None:
-                raise ValueError("the remote job succeeded without a voice")
-            await self._import(job, remote.voice_id)
-            return
-        if remote.state in ("failed", "cancelled"):
-            self._settle(job, remote.state, remote.error)
-            return
-        before = job.to_dict()
-        job.state, job.started_at = remote.state, remote.started_at
-        job.progress, job.stopping = remote.progress, remote.stopping
-        if job.to_dict() != before:
-            self._persist(job)
-
-    async def _import(self, job: Job, remote_voice_id: str) -> None:
-        """Fetch the remote voice and import it; fetch errors propagate (the poll retries)."""
-        meta = await self._client.voice(remote_voice_id)
-        style = await self._client.style(remote_voice_id)
-        build = meta.get("build")
-        extra = {**(build if isinstance(build, dict) else {}), "builder": self.label}
-        work = asyncio.ensure_future(asyncio.to_thread(self._store, job.request, style, extra))
-        self._importing.add(job.id)
+    def _save(self, job: Job) -> None:
+        """Persist ``job``; a write error is only logged (the in-memory job is authoritative)."""
         try:
-            outcome = await asyncio.shield(work)
-        except asyncio.CancelledError:  # close(): finish the import, never half-record it
-            self._record(job, await work, remote_voice_id)
-            raise
-        finally:
-            self._importing.discard(job.id)
-        self._record(job, outcome, remote_voice_id)
-
-    def _store(
-        self, req: BuildRequest, style: dict[str, Any], extra: dict[str, Any]
-    ) -> Voice | str:
-        """Import the voice (in a thread); return it, or why it could not be stored."""
-        try:
-            return self._library.import_style(
-                style, req.name.strip(), req.description, req.tags, req.source_note, extra=extra
-            )
-        except (OSError, ValueError, ApiError) as exc:
-            return exc.message if isinstance(exc, ApiError) else str(exc)
-
-    def _record(self, job: Job, outcome: Voice | str, remote_voice_id: str) -> None:
-        if isinstance(outcome, str):
-            self._settle(job, "failed", {"code": "import_failed", "message": outcome})
-            return
-        job.voice_id, job.remote_voice_id = outcome.id, remote_voice_id
-        self._settle(job, "succeeded", None)
-
-    def _persist(self, job: Job) -> None:
-        write_job(self._root / job.id, job)
+            write_job(self._root / job.id, job)
+        except OSError:
+            logger.exception("job %s: could not save its %s state", job.id, job.state)
 
     def _settle(self, job: Job, state: JobState, error: dict[str, Any] | None) -> None:
-        """Move ``job`` to a terminal state and persist it (a write error is only logged)."""
+        """Move ``job`` to a terminal state and persist it."""
         job.state, job.error, job.finished_at = state, error, now_iso()
-        try:
-            self._persist(job)
-        except OSError:
-            logger.exception("job %s: could not save its %s state", job.id, state)
+        self._save(job)

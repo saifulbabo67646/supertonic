@@ -219,27 +219,27 @@ async def test_start_builder_modes(
     probe = ProbeResult(True, "ok", "RTX 4050", 6144, ("fast",))
     monkeypatch.setattr(builder_boot, "detect_local_builder", lambda: probe)
     off = settings.model_copy(update={"builder": "off"})
-    assert await builder_boot.start_builder(off, lib, tmp_path) == (None, None)
+    assert await builder_boot.start_builder(off, lib, tmp_path) is None
     url = settings.model_copy(update={"builder_url": "http://127.0.0.1:9/", "builder": "local"})
-    remote, remote_detail = await builder_boot.start_builder(url, lib, tmp_path)
+    remote = await builder_boot.start_builder(url, lib, tmp_path)
     try:  # an unreachable remote does not stop startup; submit-time health gates builds
-        assert isinstance(remote, RemoteBuilder)
-        assert remote_detail == {"host": "127.0.0.1:9", "methods": ["accurate", "fast"]}
+        assert isinstance(remote, RemoteBuilder) and remote.kind == "remote"
+        assert remote.detail() == {"host": "127.0.0.1:9", "methods": ["accurate", "fast"]}
     finally:
         assert remote is not None
         await remote.close()
-    mgr, detail = await builder_boot.start_builder(settings, lib, tmp_path)
+    mgr = await builder_boot.start_builder(settings, lib, tmp_path)
     assert mgr is not None
     try:
-        assert mgr.methods == ("fast",)
-        assert detail == {"device": "RTX 4050", "vram_mb": 6144, "methods": ["fast"]}
+        assert mgr.methods == ("fast",) and mgr.kind == "local"
+        assert mgr.detail() == {"device": "RTX 4050", "vram_mb": 6144, "methods": ["fast"]}
     finally:
         await mgr.close()
     no = ProbeResult(False, "CUDA is unavailable", None, None, ())
     monkeypatch.setattr(builder_boot, "detect_local_builder", lambda: no)
-    assert await builder_boot.start_builder(settings, lib, tmp_path) == (None, None)
+    assert await builder_boot.start_builder(settings, lib, tmp_path) is None
     local = settings.model_copy(update={"builder": "local"})
-    assert await builder_boot.start_builder(local, lib, tmp_path) == (None, None)
+    assert await builder_boot.start_builder(local, lib, tmp_path) is None
 
 
 async def test_builder_busy_is_503(
@@ -318,8 +318,13 @@ def test_builder_needs_engine_and_library(settings: Settings, manager: JobManage
 
 
 class _FakeBuilder:
+    kind = "local"
+
     def __init__(self) -> None:
         self.closed = False
+
+    def detail(self) -> dict[str, Any]:
+        return {"device": "X", "vram_mb": 1, "methods": ["fast"]}
 
     async def close(self) -> None:
         self.closed = True
@@ -346,14 +351,15 @@ async def test_lifespan_assigns_and_closes_builder(
     fake = _FakeBuilder()
 
     async def boot(*args: Any) -> Any:
-        return fake, {"device": "X", "vram_mb": 1, "methods": ["fast"]}
+        return fake
 
     monkeypatch.setattr(app_mod, "start_builder", boot)
     app = _boot_app(settings, engine, lib, monkeypatch)
     async with app.router.lifespan_context(app):
         assert app.state.app_state.builder is fake
         async with app_client(app) as c:
-            assert (await c.get("/v1/health")).json()["builder"] == "local"
+            health = (await c.get("/v1/health")).json()
+            assert health["builder"] == "local" and health["builder_detail"]["vram_mb"] == 1
     assert fake.closed
 
 

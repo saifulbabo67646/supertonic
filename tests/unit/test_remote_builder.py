@@ -424,3 +424,171 @@ async def test_start_with_unreachable_remote_does_not_raise(
     assert rb.methods == BUILD_METHODS
     await rb.close()
     await http.aclose()
+
+
+def _mock(handler: Callable[[httpx.Request], httpx.Response]) -> httpx.AsyncClient:
+    return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+
+@pytest.mark.parametrize("bad", [{"consent": False}, {"name": "  "}])
+async def test_invalid_request_rejected_locally_before_any_contact(
+    lib: VoiceLibrary, tmp_path: Path, bad: dict[str, Any]
+) -> None:
+    seen: list[httpx.Request] = []
+
+    def refuse(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        raise httpx.ConnectError("connection refused", request=request)
+
+    http = _mock(refuse)
+    rb = RemoteBuilder(BASE, None, lib, tmp_path / "data", http=http)
+    await rb.start()
+    await asyncio.sleep(0.05)  # let the background method refresh run and fail
+    seen.clear()
+    try:
+        with pytest.raises(ApiError) as info:
+            await rb.submit(_req(**bad), FILES)
+    finally:
+        await rb.close()
+        await http.aclose()
+    assert info.value.status == 400
+    assert info.value.code in {"consent_required", "invalid_request"}
+    assert seen == [] and rb.list() == []
+
+
+async def test_concurrent_cancels_racing_remote_success_import_once(
+    make_remote: RemoteFactory,
+    make_builder: BuilderFactory,
+    control: Path,
+    lib: VoiceLibrary,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FAKE_BUILDER_MODES", "gate")
+    remote = await make_remote()
+    rb = await make_builder(remote, poll_s=30.0)  # the first poll never comes in time
+    job = await rb.submit(_req(), FILES)
+    rid = job.remote_id or ""
+    await _until(lambda: remote.manager.get(rid).state == "running")
+    (control / "go").touch()
+    await _until(lambda: remote.manager.get(rid).state == "succeeded")
+    first, second = await asyncio.gather(rb.cancel(job.id), rb.cancel(job.id))
+    done = await _settled(rb, job.id)
+    assert done.state == "succeeded" and _custom(lib) == [done.voice_id]
+    await rb.close()
+    leftover = [t for t in asyncio.all_tasks() if t.get_name().startswith("remote-build-")]
+    assert leftover == []
+
+
+async def test_restart_after_import_before_settle_does_not_import_twice(
+    make_remote: RemoteFactory, make_builder: BuilderFactory, lib: VoiceLibrary, tmp_path: Path
+) -> None:
+    remote = await make_remote()
+    first = await make_builder(remote)
+    job = await first.submit(_req(), FILES)
+    done = await _settled(first, job.id)
+    assert done.state == "succeeded"
+    await first.close()
+    path = tmp_path / "data" / "jobs" / job.id / "job.json"
+    saved = json.loads(path.read_text())
+    saved.update(state="running", voice_id=None, remote_voice_id=None, finished_at=None)
+    path.write_text(json.dumps(saved))  # as if the server died between import and settle
+    second = await make_builder(remote)
+    again = await _settled(second, job.id)
+    assert again.state == "succeeded" and again.voice_id == done.voice_id
+    assert _custom(lib) == [done.voice_id]
+
+
+async def test_mirror_write_error_keeps_polling(
+    make_remote: RemoteFactory,
+    make_builder: BuilderFactory,
+    control: Path,
+    lib: VoiceLibrary,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from supertonic_server.builder import remote as remote_mod
+
+    monkeypatch.setenv("FAKE_BUILDER_MODES", "gate")
+    rb = await make_builder(await make_remote())
+    job = await rb.submit(_req(), FILES)
+
+    def flaky(folder: Path, j: Job) -> None:
+        if j.state not in TERMINAL:
+            raise OSError("disk full")
+        write_job(folder, j)
+
+    monkeypatch.setattr(remote_mod, "write_job", flaky)
+    await _running(rb, job.id)
+    (control / "go").touch()
+    done = await _settled(rb, job.id)
+    assert done.state == "succeeded" and _custom(lib) == [done.voice_id]
+
+
+async def test_start_twice_leaks_no_task(lib: VoiceLibrary, tmp_path: Path) -> None:
+    async def hang(request: httpx.Request) -> httpx.Response:
+        await asyncio.sleep(30)  # the method refresh stays in flight
+        return httpx.Response(200, json={})
+
+    def refreshes() -> list[asyncio.Task[Any]]:
+        return [t for t in asyncio.all_tasks() if t.get_name() == "builder-methods"]
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(hang))
+    rb = RemoteBuilder(BASE, None, lib, tmp_path / "data", http=http)
+    await rb.start()
+    await rb.start()
+    await asyncio.sleep(0)
+    assert len(refreshes()) == 1
+    await rb.close()
+    await http.aclose()
+    assert refreshes() == []
+
+
+async def test_non_json_5xx_at_submit_is_unavailable(lib: VoiceLibrary, tmp_path: Path) -> None:
+    def broken(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/health":
+            return httpx.Response(200, json={"builder": "local", "builder_detail": None})
+        return httpx.Response(500, text="Internal Server Error")
+
+    http = _mock(broken)
+    rb = RemoteBuilder(BASE, None, lib, tmp_path / "data", http=http)
+    await rb.start()
+    try:
+        with pytest.raises(ApiError) as info:
+            await rb.submit(_req(), FILES)
+    finally:
+        await rb.close()
+        await http.aclose()
+    assert info.value.status == 503 and info.value.code == "builder_unavailable"
+    assert "HTTP 500" in info.value.message
+
+
+async def test_finish_error_names_the_local_job(
+    make_remote: RemoteFactory, make_builder: BuilderFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("FAKE_BUILDER_MODES", "gate")
+    rb = await make_builder(await make_remote())
+    await _running(rb, (await rb.submit(_req(), FILES)).id)
+    queued = await rb.submit(_req(name="Second"), FILES)  # waits behind the first remotely
+    with pytest.raises(ApiError) as info:
+        await rb.finish(queued.id)
+    assert info.value.status == 409 and info.value.code == "job_not_running"
+    assert queued.id in info.value.message and (queued.remote_id or "") not in info.value.message
+
+
+async def test_unreachable_message_hides_url_and_credentials(
+    lib: VoiceLibrary, tmp_path: Path
+) -> None:
+    def refuse(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError(f"cannot reach {request.url}", request=request)
+
+    http = _mock(refuse)
+    rb = RemoteBuilder("http://admin:hunter2@win:8787", None, lib, tmp_path / "data", http=http)
+    await rb.start()
+    try:
+        with pytest.raises(ApiError) as info:
+            await rb.submit(_req(), FILES)
+    finally:
+        await rb.close()
+        await http.aclose()
+    message = info.value.message
+    assert message.startswith(f"Voice builder at {HOST} is not reachable: ")
+    assert "hunter2" not in message and "admin" not in message and "http://" not in message
