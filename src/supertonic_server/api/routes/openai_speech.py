@@ -16,7 +16,7 @@ from supertonic_server.api.routes._common import State
 from supertonic_server.api.schemas import SpeechRequest
 from supertonic_server.audio import ALLOWED_RATES, MIME, encode, resample, to_pcm16, wav_header
 from supertonic_server.core.errors import ApiError
-from supertonic_server.engine import PRIORITY_DEFAULT, Chunk
+from supertonic_server.engine import PRIORITY_DEFAULT, PRIORITY_REALTIME, Chunk
 from supertonic_server.text import get_language
 
 logger = logging.getLogger(__name__)
@@ -75,7 +75,11 @@ async def _body(
 
 @router.post("/audio/speech")
 async def speech(req: SpeechRequest, state: State) -> Response:
-    """Synthesise ``input``; ``pcm`` and ``wav`` are streamed per sentence."""
+    """Synthesise ``input``; ``pcm`` and ``wav`` are streamed per sentence.
+
+    ``pcm`` runs at realtime priority with ``settings.realtime_steps`` unless the request
+    sets ``total_steps``; every other format uses default priority and ``total_steps`` (8).
+    """
     voice = state.library.resolve(req.voice)
     get_language(req.language)
     rate = _target_rate(req)
@@ -83,7 +87,14 @@ async def speech(req: SpeechRequest, state: State) -> Response:
     engine = state.engine
     headers = {"X-Sample-Rate": str(rate), "X-Voice-Id": voice.id}
     media = MIME[req.response_format]
-    args = (req.input, style, req.language, req.speed, req.total_steps, PRIORITY_DEFAULT)
+    # ``pcm`` is the live-agent path (LiveKit, Pipecat): it is scheduled like a realtime
+    # session and, unless the caller chose ``total_steps``, uses the realtime step count.
+    live = req.response_format == "pcm"
+    priority = PRIORITY_REALTIME if live else PRIORITY_DEFAULT
+    steps = req.total_steps
+    if live and "total_steps" not in req.model_fields_set:
+        steps = state.settings.realtime_steps
+    args = (req.input, style, req.language, req.speed, steps, priority)
 
     if req.response_format not in ("pcm", "wav"):
         audio, _ = await engine.render(*args)

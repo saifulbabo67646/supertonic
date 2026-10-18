@@ -270,3 +270,29 @@ def test_load_engine_builds_tts(monkeypatch: pytest.MonkeyPatch, tmp_path: Path)
         "intra_op_num_threads": 3,
     }
     eng.scheduler.close()
+
+
+async def test_realtime_has_its_own_queue_reserve() -> None:
+    """Default-priority work cannot fill the queue for realtime jobs (I5a)."""
+    sched = Scheduler(workers=1, max_queue=2)
+    gate = threading.Event()
+    try:
+        running = asyncio.create_task(sched.submit(gate.wait, PRIORITY_DEFAULT))
+        bulk = [asyncio.create_task(sched.submit(lambda: "b", PRIORITY_DEFAULT)) for _ in range(2)]
+        await asyncio.sleep(0)  # each task runs up to awaiting its job
+        assert (sched.running, sched.waiting) == (1, 2)
+        with pytest.raises(ServerBusy):
+            await sched.submit(lambda: "more bulk", PRIORITY_DEFAULT)
+        live = [asyncio.create_task(sched.submit(lambda: "l", PRIORITY_REALTIME)) for _ in range(2)]
+        await asyncio.sleep(0)
+        assert sched.waiting == 4 and not any(t.done() for t in live)
+        with pytest.raises(ServerBusy):  # the realtime reserve is max_queue as well
+            await sched.submit(lambda: "l", PRIORITY_REALTIME)
+        with pytest.raises(ServerBusy):  # waiting realtime jobs count against default work
+            await sched.submit(lambda: "b", PRIORITY_DEFAULT)
+    finally:
+        gate.set()
+    assert await asyncio.gather(*live) == ["l", "l"]
+    assert await asyncio.gather(*bulk) == ["b", "b"]
+    await running
+    sched.close()

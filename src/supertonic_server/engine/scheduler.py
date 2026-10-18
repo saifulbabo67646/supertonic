@@ -36,19 +36,23 @@ class ServerBusy(ApiError):
 class _Job(Generic[T]):
     fn: Callable[[], T]
     future: asyncio.Future[T]
+    realtime: bool = False
     started: bool = field(default=False)
 
 
 class Scheduler:
     """Runs blocking callables on ``workers`` threads, lowest priority value first.
 
-    Jobs of equal priority run in submission order. At most ``max_queue`` jobs may wait
-    (not counting running ones); beyond that :meth:`submit` raises :class:`ServerBusy`.
-    All bookkeeping happens on the event loop thread, so no lock is needed.
+    Jobs of equal priority run in submission order. Admission keeps a reserve for realtime
+    work: a :data:`PRIORITY_REALTIME` job is refused only when ``max_queue`` realtime jobs
+    are already waiting, while any other job is refused once ``max_queue`` jobs of any
+    priority are waiting (running jobs never count). Bulk requests therefore cannot make a
+    live session fail with :class:`ServerBusy`. All bookkeeping happens on the event loop
+    thread, so no lock is needed.
 
     Args:
         workers: Number of jobs allowed to run at once.
-        max_queue: Maximum number of jobs waiting to start.
+        max_queue: Maximum number of jobs waiting to start (per admission class, see above).
     """
 
     def __init__(self, workers: int, max_queue: int) -> None:
@@ -60,6 +64,7 @@ class Scheduler:
         self._heap: list[tuple[int, int, _Job[Any]]] = []
         self._seq = itertools.count()
         self._running = 0
+        self._waiting_realtime = 0
         self._closed = False
 
     @property
@@ -79,16 +84,19 @@ class Scheduler:
         if it has already started, the thread finishes and its result is discarded.
 
         Raises:
-            ServerBusy: The queue already holds ``max_queue`` waiting jobs, or the scheduler
-                is closed.
+            ServerBusy: The job's admission class is full (see the class docstring), or the
+                scheduler is closed.
         """
         if self._closed:
             raise ServerBusy("Server is shutting down")
-        if len(self._heap) >= self.max_queue:
+        realtime = priority <= PRIORITY_REALTIME
+        waiting = self._waiting_realtime if realtime else len(self._heap)
+        if waiting >= self.max_queue:
             raise ServerBusy()
-        job: _Job[T] = _Job(fn, asyncio.get_running_loop().create_future())
+        job: _Job[T] = _Job(fn, asyncio.get_running_loop().create_future(), realtime=realtime)
         entry: tuple[int, int, _Job[Any]] = (priority, next(self._seq), job)
         heapq.heappush(self._heap, entry)
+        self._waiting_realtime += realtime
         self._dispatch()
         try:
             return await job.future
@@ -96,6 +104,7 @@ class Scheduler:
             if not job.started and entry in self._heap:
                 self._heap.remove(entry)
                 heapq.heapify(self._heap)
+                self._waiting_realtime -= realtime
             raise
 
     def close(self) -> None:
@@ -106,6 +115,7 @@ class Scheduler:
         """
         self._closed = True
         heap, self._heap = self._heap, []
+        self._waiting_realtime = 0
         for _, _, job in heap:
             if not job.future.done():
                 job.future.set_exception(ServerBusy("Server is shutting down"))
@@ -117,6 +127,7 @@ class Scheduler:
         loop = asyncio.get_running_loop()
         while self._running < self.workers and self._heap:
             _, _, job = heapq.heappop(self._heap)
+            self._waiting_realtime -= job.realtime
             if job.future.done():  # defensive: cancelled between scheduling steps
                 continue
             job.started = True

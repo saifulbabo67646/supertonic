@@ -11,7 +11,7 @@ import pytest
 
 from supertonic_server.api import create_app
 from supertonic_server.api.routes.openai_speech import _body
-from supertonic_server.engine import Engine
+from supertonic_server.engine import PRIORITY_DEFAULT, PRIORITY_REALTIME, Engine
 
 if TYPE_CHECKING:
     from httpx import AsyncClient
@@ -145,3 +145,35 @@ async def test_openai_sdk_compat(settings: Settings, engine: Engine, lib: VoiceL
             model="tts-1", voice="M1", input="Hi.", response_format="wav"
         )
         assert resp.content.startswith(b"RIFF")
+
+
+@pytest.mark.parametrize(
+    ("extra", "steps", "priority"),
+    [
+        ({"response_format": "pcm"}, 3, PRIORITY_REALTIME),  # settings.realtime_steps
+        ({"response_format": "pcm", "total_steps": 5}, 5, PRIORITY_REALTIME),
+        ({"response_format": "wav"}, 8, PRIORITY_DEFAULT),
+        ({"response_format": "mp3"}, 8, PRIORITY_DEFAULT),
+    ],
+)
+async def test_pcm_is_the_realtime_path(
+    client: AsyncClient,
+    engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    extra: dict[str, Any],
+    steps: int,
+    priority: int,
+) -> None:
+    """``pcm`` (the live-agent path) runs at realtime priority and realtime steps (I5b)."""
+    seen: list[int] = []
+    real_submit = engine.scheduler.submit
+
+    async def submit(fn: Any, prio: int) -> Any:
+        seen.append(prio)
+        return await real_submit(fn, prio)
+
+    monkeypatch.setattr(engine.scheduler, "submit", submit)
+    r = await client.post("/v1/audio/speech", json={"input": "Hi.", "voice": "F1", **extra})
+    assert r.status_code == 200
+    assert [c[2] for c in engine.model.calls] == [steps]  # type: ignore[attr-defined]
+    assert seen == [priority]
