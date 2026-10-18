@@ -186,3 +186,48 @@ def test_flat_style_data_accepted() -> None:
     s = make_style()
     s["style_dp"]["data"] = [0.25] * (8 * 16)
     validate_style(s)
+
+
+def test_orphan_folder_does_not_block_import(lib: VoiceLibrary) -> None:
+    """A leftover folder without valid metadata must not make imports fail forever (I9)."""
+    (lib.custom_dir / "ghost").mkdir()
+    (lib.custom_dir / "ghost" / "style.json").write_text("{}", encoding="utf-8")
+    v = lib.import_style(make_style(), name="Ghost")
+    assert v.id == "ghost-2" and lib.style(v.id) is not None
+
+
+def test_save_preview_refuses_deleted_voice(lib: VoiceLibrary) -> None:
+    v = lib.import_style(make_style(), name="Gone")
+    lib.delete(v.id)
+    with pytest.raises(ApiError) as e:
+        lib.save_preview(v.id, "en", b"RIFF")
+    assert e.value.code == "voice_not_found"
+    assert not (lib.custom_dir / v.id).exists()
+    assert lib.save_preview("F1", "en", b"RIFF").read_bytes() == b"RIFF"  # presets: _presets
+
+
+def test_slug_length_and_windows_reserved_names(lib: VoiceLibrary) -> None:
+    long = lib.import_style(make_style(), name="x" * 100)
+    again = lib.import_style(make_style(), name="x" * 100)
+    assert len(long.id) <= 64 and len(again.id) <= 64 and long.id != again.id
+    for name in ("CON", "nul", "Aux", "prn", "com1", "LPT9"):
+        vid = lib.import_style(make_style(), name=name).id
+        assert vid.lower() != name.lower() and vid.startswith(name.lower())
+    assert lib.import_style(make_style(), name="com10").id == "com10"
+
+
+def test_scan_takes_id_from_folder(lib: VoiceLibrary, caplog: pytest.LogCaptureFixture) -> None:
+    """voice.json cannot claim another voice's id; mismatches are skipped (M8)."""
+    v = lib.import_style(make_style(), name="Real")
+    meta = lib.custom_dir / v.id / "voice.json"
+    data = json.loads(meta.read_text(encoding="utf-8"))
+    (lib.custom_dir / "copy").mkdir()
+    (lib.custom_dir / "copy" / "style.json").write_text(json.dumps(make_style()), "utf-8")
+    (lib.custom_dir / "copy" / "voice.json").write_text(json.dumps(data), "utf-8")  # id "real"
+    (lib.custom_dir / "noid").mkdir()
+    (lib.custom_dir / "noid" / "style.json").write_text(json.dumps(make_style()), "utf-8")
+    del data["id"]
+    (lib.custom_dir / "noid" / "voice.json").write_text(json.dumps(data), "utf-8")
+    again = VoiceLibrary(lib.presets_dir, lib.custom_dir)
+    assert [x.id for x in again.list()] == ["F1", "M1", "noid", "real"]
+    assert "copy" in caplog.text

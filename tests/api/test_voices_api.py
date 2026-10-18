@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from httpx import AsyncClient
 
     from supertonic_server.engine import Engine
+    from supertonic_server.voices import VoiceLibrary
 
 
 async def test_import_list_export_delete(client: AsyncClient) -> None:
@@ -115,3 +116,32 @@ async def test_preview_validation(client: AsyncClient) -> None:
 
 async def test_voices_require_key(authed_client: AsyncClient) -> None:
     assert (await authed_client.get("/v1/voices")).status_code == 401
+
+
+async def test_import_name_too_long(client: AsyncClient) -> None:
+    body = {"style": make_style(), "name": "n" * 101}
+    r = await client.post("/v1/voices/import", json=body)
+    assert r.status_code == 400 and r.json()["error"]["param"] == "name"
+    ok = await client.post("/v1/voices/import", json={**body, "name": "n" * 100})
+    assert ok.status_code == 201
+    r = await client.patch(f"/v1/voices/{ok.json()['id']}", json={"name": "n" * 101})
+    assert r.status_code == 400 and r.json()["error"]["param"] == "name"
+
+
+async def test_preview_of_voice_deleted_mid_render(
+    client: AsyncClient, engine: Engine, lib: VoiceLibrary
+) -> None:
+    """Deleting a voice while its preview renders must not recreate its folder (I9)."""
+    vid = await client.post("/v1/voices/import", json={"style": make_style(), "name": "Brief"})
+    voice_id = vid.json()["id"]
+    real = engine.render
+
+    async def render_then_delete(*a: object, **k: object) -> object:
+        out = await real(*a, **k)  # type: ignore[arg-type]
+        lib.delete(voice_id)
+        return out
+
+    engine.render = render_then_delete  # type: ignore[method-assign,assignment]
+    r = await client.get(f"/v1/voices/{voice_id}/preview")
+    assert r.status_code == 404 and r.json()["error"]["code"] == "voice_not_found"
+    assert not (lib.custom_dir / voice_id).exists()

@@ -27,9 +27,34 @@ PRESET_IDS = frozenset({*(f"F{i}" for i in range(1, 6)), *(f"M{i}" for i in rang
 _PRESET_PREVIEW_DIR = "_presets"
 
 
+MAX_SLUG_LENGTH = 64
+"""Longest custom voice id (folder name)."""
+
+# Device names Windows refuses as file or folder names, whatever the extension.
+_WINDOWS_RESERVED = frozenset(
+    {
+        "con",
+        "prn",
+        "aux",
+        "nul",
+        *(f"com{i}" for i in range(1, 10)),
+        *(f"lpt{i}" for i in range(1, 10)),
+    }
+)
+
+
 def _slug(name: str) -> str:
+    """A filesystem-safe id: lowercase ``a-z0-9-``, at most 64 characters, never reserved."""
     slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
-    return slug or "voice"
+    slug = slug[:MAX_SLUG_LENGTH].rstrip("-") or "voice"
+    if slug in _WINDOWS_RESERVED:
+        slug = f"{slug}-voice"
+    return slug
+
+
+def _with_suffix(base: str, n: int) -> str:
+    suffix = f"-{n}"
+    return base[: MAX_SLUG_LENGTH - len(suffix)].rstrip("-") + suffix
 
 
 def _atomic_write(path: Path, payload: dict[str, Any]) -> None:
@@ -65,12 +90,22 @@ class VoiceLibrary:
             gender = {"F": "female", "M": "male"}.get(f.stem[:1].upper())
             voices[f.stem] = Voice(f.stem, f.stem, "preset", gender=gender)
         for meta in self.custom_dir.glob("*/voice.json"):
+            vid = meta.parent.name
             try:
-                v = Voice(**json.loads(meta.read_text(encoding="utf-8")))
-            except (OSError, ValueError, TypeError):
+                data = json.loads(meta.read_text(encoding="utf-8"))
+                if data.get("id", vid) != vid:
+                    logger.warning(
+                        "Skipping voice folder %r: voice.json claims id %r", vid, data["id"]
+                    )
+                    continue
+                v = Voice(**{**data, "id": vid, "kind": "custom"})
+            except (OSError, ValueError, TypeError, AttributeError):
                 logger.warning("Skipping unreadable voice metadata: %s", meta)
                 continue
-            voices[v.id] = v
+            if vid in voices:  # a folder named like a preset id
+                logger.warning("Skipping voice folder %r: the id is taken by a preset", vid)
+                continue
+            voices[vid] = v
         self._voices = voices
 
     def list(self) -> list[Voice]:
@@ -144,12 +179,15 @@ class VoiceLibrary:
         """Validate and store a new custom voice; nothing is written if invalid."""
         validate_style(style)
         with self._lock:
-            taken = {i.lower() for i in self._voices} | {i.lower() for i in PRESET_IDS}
+            # Folders on disk count too: a leftover folder without valid metadata would
+            # otherwise make every import under that name fail.
+            on_disk = {p.name.lower() for p in self.custom_dir.iterdir()}
+            taken = {i.lower() for i in (*self._voices, *PRESET_IDS)} | on_disk
             base = _slug(name)
             vid, n = base, 1
-            while vid.lower() in taken:
+            while vid in taken:
                 n += 1
-                vid = f"{base}-{n}"
+                vid = _with_suffix(base, n)
             voice = Voice(
                 vid,
                 name,

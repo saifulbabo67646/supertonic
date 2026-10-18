@@ -17,6 +17,7 @@ from supertonic_server.voices import Voice
 router = APIRouter(prefix="/v1")
 
 MAX_STYLE_BYTES = 2 * 1024 * 1024
+MAX_NAME_LENGTH = 100
 KINDS = ("preset", "custom")
 
 
@@ -27,6 +28,13 @@ def _view(voice: Voice) -> dict[str, Any]:
 def _clean_name(name: str | None) -> str:
     if name is None or not name.strip():
         raise ApiError(400, "invalid_request", "name must not be blank", param="name")
+    if len(name.strip()) > MAX_NAME_LENGTH:
+        raise ApiError(
+            400,
+            "invalid_request",
+            f"name must be at most {MAX_NAME_LENGTH} characters",
+            param="name",
+        )
     return name.strip()
 
 
