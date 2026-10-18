@@ -78,7 +78,7 @@ async def test_validation_error_shape(
 
     _mount_last(app)
     transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://t") as c:
+    async with httpx.AsyncClient(transport=transport, base_url="http://localhost") as c:
         r = await c.post("/v1/_test", json={})
     assert r.status_code == 400
     err = r.json()["error"]
@@ -100,7 +100,7 @@ async def test_api_error_and_unhandled(
 
     _mount_last(app)
     transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
-    async with httpx.AsyncClient(transport=transport, base_url="http://t") as c:
+    async with httpx.AsyncClient(transport=transport, base_url="http://localhost") as c:
         r = await c.get("/v1/_api")
         assert r.status_code == 418
         assert r.json()["error"] == {

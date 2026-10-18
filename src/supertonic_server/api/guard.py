@@ -9,6 +9,11 @@ are refused without the server reading (let alone parsing) their bodies.
 - **Tunnel footgun.** Without an API key, a request carrying a forwarding header
   (``CF-Connecting-IP``, ``X-Forwarded-For``, ``Forwarded``, ``X-Real-IP``) came through a
   proxy or tunnel and is refused with 403 ``forwarded_without_key``.
+- **Drive-by web pages.** Also without an API key, a ``Host`` that is not loopback, the bind
+  host or in ``allowed_hosts`` gets 403 ``forbidden_host`` (DNS rebinding), and an
+  ``Origin`` other than the server's own or one in ``allowed_origins`` gets 403
+  ``forbidden_origin`` (cross-site requests). See :mod:`.same_origin`. With a key these are
+  skipped: the key already protects, and proxies with public host names must keep working.
 - **Body cap.** HTTP bodies are limited to :data:`MAX_BODY_BYTES` (voice imports to
   :data:`MAX_IMPORT_BODY_BYTES`, voice builds to :data:`MAX_BUILD_BODY_BYTES`); the limit is
   enforced while the body streams in, so a missing or false ``Content-Length`` does not
@@ -23,12 +28,19 @@ from __future__ import annotations
 
 import contextlib
 import hmac
+from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any
 
 from starlette._utils import get_route_path
 from starlette.datastructures import Headers, QueryParams
 from starlette.responses import JSONResponse
 
+from supertonic_server.api.same_origin import (
+    hostname,
+    normalise_origin,
+    own_origin,
+    trusted_hosts,
+)
 from supertonic_server.core.errors import ApiError, error_body
 from supertonic_server.core.limits import MAX_UPLOAD_BYTES
 
@@ -75,6 +87,27 @@ def _forwarded() -> ApiError:
     )
 
 
+def _forbidden_host(host: str) -> ApiError:
+    return ApiError(
+        403,
+        "forbidden_host",
+        f"Host {host!r} is not this server's. Without an API key only loopback names and the "
+        "bind host are accepted; add the name to SUPERTONIC_ALLOWED_HOSTS, or set "
+        "SUPERTONIC_API_KEY.",
+        type_="permission_error",
+    )
+
+
+def _forbidden_origin(origin: str) -> ApiError:
+    return ApiError(
+        403,
+        "forbidden_origin",
+        f"Requests from the web page at {origin!r} are not accepted: the server has no API "
+        "key. Add that origin to SUPERTONIC_ALLOWED_ORIGINS, or set SUPERTONIC_API_KEY.",
+        type_="permission_error",
+    )
+
+
 def _too_large(limit: int) -> ApiError:
     return ApiError(413, "payload_too_large", f"Request body exceeds the limit of {limit} bytes")
 
@@ -89,11 +122,24 @@ class Guard:
     Args:
         app: The wrapped ASGI application.
         api_key: The configured API key (``settings.api_key``), or ``None``.
+        bind_host: The interface the server listens on (``settings.host``).
+        allowed_hosts: Extra accepted ``Host`` names without a key.
+        allowed_origins: Extra accepted ``Origin`` values without a key.
     """
 
-    def __init__(self, app: ASGIApp, api_key: str | None) -> None:
+    def __init__(
+        self,
+        app: ASGIApp,
+        api_key: str | None,
+        *,
+        bind_host: str = "127.0.0.1",
+        allowed_hosts: Iterable[str] = (),
+        allowed_origins: Iterable[str] = (),
+    ) -> None:
         self.app = app
         self.api_key = api_key
+        self.hosts = trusted_hosts(bind_host, allowed_hosts)
+        self.origins = frozenset(normalise_origin(o) for o in allowed_origins if o.strip())
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         """Check the connection, then pass it on (HTTP bodies through the size cap)."""
@@ -115,7 +161,9 @@ class Guard:
         """Return why the connection must be refused, or ``None`` to let it through."""
         headers = Headers(scope=scope)
         if not self.api_key:
-            return _forwarded() if any(h in headers for h in FORWARDED_HEADERS) else None
+            if any(h in headers for h in FORWARDED_HEADERS):
+                return _forwarded()
+            return self._local_only(scope, headers)
         if not _protected(scope):
             return None
         supplied = bearer_token(headers)
@@ -124,6 +172,20 @@ class Guard:
         if hmac.compare_digest(supplied.encode(), self.api_key.encode()):
             return None
         return _invalid_key()
+
+    def _local_only(self, scope: Scope, headers: Headers) -> ApiError | None:
+        """Without a key: refuse foreign ``Host`` names and cross-origin browser requests."""
+        host = headers.get("host")
+        if host is not None and hostname(host) not in self.hosts:
+            return _forbidden_host(host)
+        origin = headers.get("origin")
+        if origin is None:
+            return None
+        wanted = normalise_origin(origin)
+        own = own_origin(scope.get("scheme", "http"), host) if host is not None else None
+        if wanted == own or wanted in self.origins:
+            return None
+        return _forbidden_origin(origin)
 
     async def _capped(self, scope: Scope, receive: Receive, send: Send) -> None:
         limit = _body_limit(scope)

@@ -72,7 +72,7 @@ def settings(tmp_path: Path) -> Settings:
 
 
 def make_client(app: FastAPI) -> httpx.AsyncClient:
-    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
+    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://localhost")
 
 
 @pytest.fixture
@@ -100,7 +100,8 @@ async def authed_client(
         yield c
 
 
-WS_PATH = "/v1/audio/speech/websocket"
+# Absolute, so the TestClient sends a loopback Host (a keyless server refuses "testserver").
+WS_PATH = "ws://localhost/v1/audio/speech/websocket"
 WsFactory = Callable[[str], AbstractContextManager[WebSocketTestSession]]
 
 

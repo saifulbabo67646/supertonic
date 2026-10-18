@@ -116,3 +116,12 @@ def test_builder_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     assert (s.builder, s.builder_api_key, s.builder_timeout_min) == ("local", None, 5)
     with pytest.raises(ValidationError):
         Settings(builder="sometimes")  # type: ignore[arg-type]
+
+
+def test_allowed_hosts_and_origins_are_comma_separated(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SUPERTONIC_ALLOWED_HOSTS", "tts.lan, studio.local ,")
+    monkeypatch.setenv("SUPERTONIC_ALLOWED_ORIGINS", "http://localhost:3000")
+    s = Settings()
+    assert s.allowed_hosts == ["tts.lan", "studio.local"]
+    assert s.allowed_origins == ["http://localhost:3000"]
+    assert Settings(allowed_hosts=[]).allowed_hosts == []

@@ -19,6 +19,8 @@ The key is checked before the body is read, so a bad or missing key is always
 | whole-file speech (`mp3`, `opus`, `aac`, `flac`) and `/v1/tts/timestamps` | 20 000 characters | `400 input_too_long` (stream longer text as `pcm`/`wav`) |
 | voice name | 100 characters (ids at most 64) | `400 invalid_request`, `param: "name"` |
 | proxy header without a key | requests with `CF-Connecting-IP`, `X-Forwarded-For`, `Forwarded` or `X-Real-IP` while `SUPERTONIC_API_KEY` is unset | `403 forwarded_without_key` |
+| foreign host without a key | a `Host` other than `localhost`, `127.0.0.1`, `[::1]`, the bind host or `SUPERTONIC_ALLOWED_HOSTS` (DNS rebinding) | `403 forbidden_host` |
+| other web site without a key | an `Origin` other than the server's own or `SUPERTONIC_ALLOWED_ORIGINS` (cross-site requests); requests without `Origin` are not affected | `403 forbidden_origin` |
 | queue | `SUPERTONIC_MAX_QUEUE` waiting jobs (realtime work has its own allowance of the same size) | `503 server_busy` |
 
 Errors always look like OpenAI's:

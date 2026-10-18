@@ -14,7 +14,7 @@ small web UI. Runs on CPU (ONNX Runtime) on macOS and Windows (Linux should work
 - **Voice building**: clone a voice from 10 to 30 s of speech on an NVIDIA GPU (Windows or Linux), or forward builds from a Mac to such a machine; the result is an ordinary voice that runs on CPU everywhere.
 - **MCP server** (`supertonic-mcp`) so Claude Code and other agents can speak, audition and build voices.
 - **Web UI** at `/` for speaking, browsing voices and copying connection snippets.
-- **Safe by default**: binds to loopback, refuses to start on a public interface without an API key, and refuses proxied or tunnelled requests while no key is set.
+- **Safe by default**: binds to loopback, refuses to start on a public interface without an API key, and while no key is set refuses proxied or tunnelled requests and requests from other web sites (Origin and Host checks).
 - **Low latency**: about 210 ms to first audio, 410 ms with four concurrent sessions (Apple M4).
 
 ## Quick start
@@ -56,6 +56,8 @@ working directory; copy [`.env.example`](.env.example) to start.
 | `SUPERTONIC_PORT` | `8787` | TCP port (1 to 65535). |
 | `SUPERTONIC_API_KEY` | unset | Bearer token clients must send. Required when the host is not loopback or a public URL is set. A blank value means no key. |
 | `SUPERTONIC_PUBLIC_URL` | unset | Public URL when behind a tunnel or proxy (for a quick tunnel with a random hostname, any value works). Setting it also requires an API key. |
+| `SUPERTONIC_ALLOWED_HOSTS` | unset | Without an API key: extra `Host` names to accept besides `localhost`, `127.0.0.1`, `[::1]` and the bind host (comma-separated). |
+| `SUPERTONIC_ALLOWED_ORIGINS` | unset | Without an API key: extra browser origins (for example `http://localhost:3000`) whose pages may call the server, besides its own (comma-separated). |
 | `SUPERTONIC_DATA_DIR` | `~/.supertonic-server` | Custom voices and previews (`~` is expanded). |
 | `SUPERTONIC_MODEL_DIR` | unset | Local model weights; unset downloads to the Hugging Face cache. |
 | `SUPERTONIC_WORKERS` | `0` | Synthesis workers. `0` means `min(4, max(1, cpu_count // 2))`. |
@@ -249,6 +251,21 @@ net, a server without a key refuses every request that carries a proxy header
 `403 forwarded_without_key`. Clients then send `Authorization: Bearer <key>`, and WebSocket
 clients should use `wss://`. The web UI is served without a key but only does anything useful
 once you enter the key.
+
+### Web pages and a keyless server
+
+A server without a key trusts every program on this machine, and a web page open in your
+browser could otherwise reach it too (a cross-site form post needs no permission, and DNS
+rebinding can even read the answers). So while no key is set the server also refuses:
+
+- a request whose `Host` is not `localhost`, `127.0.0.1`, `[::1]`, the bind host or a name in
+  `SUPERTONIC_ALLOWED_HOSTS`: `403 forbidden_host`;
+- a browser request whose `Origin` is not the server's own (same scheme, host and port) or
+  listed in `SUPERTONIC_ALLOWED_ORIGINS`: `403 forbidden_origin`.
+
+The built-in web UI is same-origin and keeps working, and programs that send no `Origin`
+(curl, SDKs, the MCP server) are unaffected. With an API key these checks are off: the key
+protects the server, and tunnels and proxies with public host names keep working.
 
 ## Performance
 

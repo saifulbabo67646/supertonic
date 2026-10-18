@@ -203,3 +203,104 @@ def test_guard_honours_root_path() -> None:
 def test_body_limit_honours_root_path() -> None:
     assert _body_limit(_scope("/api/v1/voices/import", "/api")) == MAX_IMPORT_BODY_BYTES
     assert _body_limit(_scope("/api/v1/audio/speech", "/api")) == MAX_BODY_BYTES
+
+
+# -- Origin / Host checks on a server without an API key (CSRF, DNS rebinding) -----------
+
+BUILD_FORM = {"name": "x", "source_note": "mine", "consent": "true"}
+BUILD_FILES = {"files": ("a.wav", b"RIFF", "audio/wav")}
+
+
+def _keyless(settings: Settings, engine: Engine, lib: VoiceLibrary, **kw: Any) -> FastAPI:
+    return create_app(settings.model_copy(update=kw), engine, lib)
+
+
+async def _build(app: FastAPI, base: str = "http://127.0.0.1:8787", **headers: str) -> Any:
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=base) as c:
+        return await c.post("/v1/voices/build", data=BUILD_FORM, files=BUILD_FILES, headers=headers)
+
+
+def _code(r: httpx.Response) -> str:
+    return str(r.json()["error"]["code"])
+
+
+async def test_cross_origin_build_without_key_refused(app: FastAPI) -> None:
+    r = await _build(app, Origin="https://evil.example")
+    assert r.status_code == 403 and _code(r) == "forbidden_origin"
+    assert "SUPERTONIC_ALLOWED_ORIGINS" in r.json()["error"]["message"]
+    assert _code(await _build(app, Origin="null")) == "forbidden_origin"
+    # same host, other port: another origin
+    assert _code(await _build(app, Origin="http://127.0.0.1:9999")) == "forbidden_origin"
+
+
+async def test_same_origin_build_without_key_passes_the_guard(app: FastAPI) -> None:
+    for base, origin in (
+        ("http://127.0.0.1:8787", "http://127.0.0.1:8787"),
+        ("http://localhost:8787", "http://LOCALHOST:8787"),
+        ("http://[::1]:8787", "http://[::1]:8787"),
+    ):
+        r = await _build(app, base, Origin=origin)
+        assert r.status_code not in (401, 403), (base, r.text)
+
+
+async def test_allowed_origin_passes(settings: Settings, engine: Engine, lib: VoiceLibrary) -> None:
+    app = _keyless(settings, engine, lib, allowed_origins=["https://studio.example"])
+    r = await _build(app, Origin="https://studio.example")
+    assert r.status_code not in (401, 403)
+    assert _code(await _build(app, Origin="https://other.example")) == "forbidden_origin"
+
+
+async def test_request_without_origin_passes(app: FastAPI) -> None:
+    r = await _build(app)  # curl, SDKs and the MCP client send no Origin
+    assert r.status_code not in (401, 403)
+
+
+@pytest.mark.parametrize("host", ["evil.example", "evil.example:8787", "192.0.2.10:8787"])
+async def test_foreign_host_without_key_refused(app: FastAPI, host: str) -> None:
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app)) as c:
+        r = await c.get("http://127.0.0.1:8787/v1/jobs", headers={"Host": host})
+    assert r.status_code == 403 and _code(r) == "forbidden_host"
+    assert "SUPERTONIC_ALLOWED_HOSTS" in r.json()["error"]["message"]
+
+
+async def test_allowed_and_bind_hosts_pass(
+    settings: Settings, engine: Engine, lib: VoiceLibrary
+) -> None:
+    app = _keyless(settings, engine, lib, allowed_hosts=["tts.lan"], host="localhost")
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app)) as c:
+        for host in ("tts.lan:8787", "TTS.LAN", "localhost:8787", "127.0.0.1", "[::1]:8787"):
+            r = await c.get("http://127.0.0.1:8787/v1/languages", headers={"Host": host})
+            assert r.status_code == 200, host
+
+
+def test_foreign_host_websocket_refused(app: FastAPI) -> None:
+    url = WS_PATH.replace("localhost", "evil.example:8787")
+    with TestClient(app).websocket_connect(url) as ws:
+        assert ws.receive_json()["error"]["code"] == "forbidden_host"
+
+
+def test_cross_origin_websocket_refused(app: FastAPI) -> None:
+    client, url = TestClient(app), WS_PATH.replace("localhost", "localhost:8787")
+    with client.websocket_connect(url, headers={"Origin": "https://evil.example"}) as ws:
+        assert ws.receive_json()["error"]["code"] == "forbidden_origin"
+    with client.websocket_connect(url, headers={"Origin": "http://localhost:8787"}) as ws:
+        assert ws.receive_json()["type"] == "session.created"
+
+
+async def test_origin_and_host_not_checked_with_a_key(keyed_app: FastAPI) -> None:
+    r = await _build(keyed_app, "https://tts.example.com", Origin="https://evil.example", **KEY)
+    assert r.status_code not in (401, 403)
+    assert (await _build(keyed_app, Origin="https://evil.example")).status_code == 401
+
+
+def test_origin_check_honours_root_path() -> None:
+    guard = Guard(_noop_app, None)
+    scope = {
+        **_scope("/api/v1/voices/build", "/api"),
+        "scheme": "http",
+        "headers": [(b"host", b"localhost:8787"), (b"origin", b"https://evil.example")],
+    }
+    rejection = guard.check(scope)
+    assert rejection is not None and rejection.code == "forbidden_origin"
+    scope["headers"] = [(b"host", b"localhost:8787"), (b"origin", b"http://localhost:8787")]
+    assert guard.check(scope) is None

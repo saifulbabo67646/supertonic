@@ -143,9 +143,9 @@ async def test_body_generator_streams_and_closes_engine(engine: Engine, lib: Voi
 
 async def test_openai_sdk_compat(settings: Settings, engine: Engine, lib: VoiceLibrary) -> None:
     app = create_app(settings, engine, lib)
-    http = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
+    http = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://localhost")
     async with http:
-        sdk = openai.AsyncOpenAI(base_url="http://test/v1", api_key="x", http_client=http)
+        sdk = openai.AsyncOpenAI(base_url="http://localhost/v1", api_key="x", http_client=http)
         resp = await sdk.audio.speech.create(
             model="tts-1", voice="M1", input="Hi.", response_format="wav"
         )

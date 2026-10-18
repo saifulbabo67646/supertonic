@@ -67,8 +67,15 @@ def create_app(
     if engine is not None and library is not None:
         app.state.app_state = AppState(settings, engine, library, builder)
     install_error_handlers(app)
-    # Auth, the forwarded-header check and the body cap run before routing and parsing.
-    app.add_middleware(Guard, api_key=settings.api_key)
+    # Auth, the forwarded-header, Host and Origin checks and the body cap run before routing
+    # and parsing.
+    app.add_middleware(
+        Guard,
+        api_key=settings.api_key,
+        bind_host=settings.host,
+        allowed_hosts=settings.allowed_hosts,
+        allowed_origins=settings.allowed_origins,
+    )
     for router in ROUTERS:
         app.include_router(router)
     # ES modules need a JavaScript MIME type; some Windows registries map .js to text/plain.

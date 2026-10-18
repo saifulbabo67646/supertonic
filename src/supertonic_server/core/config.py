@@ -5,10 +5,10 @@ from __future__ import annotations
 import math
 import os
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 
@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     port: int = Field(8787, ge=1, le=65535)
     api_key: str | None = None
     public_url: str | None = None
+    # Without an API key: extra Host names and browser origins to accept (comma-separated).
+    allowed_hosts: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    allowed_origins: Annotated[list[str], NoDecode] = Field(default_factory=list)
     data_dir: Path = Path.home() / ".supertonic-server"
     model_dir: Path | None = None
     workers: int = Field(0, ge=0)
@@ -44,6 +47,14 @@ class Settings(BaseSettings):
         """Strip the key; an empty or whitespace-only key means "no key"."""
         if isinstance(value, str):
             return value.strip() or None
+        return value
+
+    @field_validator("allowed_hosts", "allowed_origins", mode="before")
+    @classmethod
+    def _split_commas(cls, value: Any) -> Any:
+        """Read a comma-separated string (the environment form) as a list."""
+        if isinstance(value, str):
+            return [part.strip() for part in value.split(",") if part.strip()]
         return value
 
     @field_validator("data_dir", "model_dir", mode="after")
