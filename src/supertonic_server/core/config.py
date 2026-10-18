@@ -5,7 +5,9 @@ from __future__ import annotations
 import math
 import os
 from pathlib import Path
+from typing import Any
 
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
@@ -21,17 +23,31 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="SUPERTONIC_", env_file=".env", extra="ignore")
 
     host: str = "127.0.0.1"
-    port: int = 8787
+    port: int = Field(8787, ge=1, le=65535)
     api_key: str | None = None
     public_url: str | None = None
     data_dir: Path = Path.home() / ".supertonic-server"
     model_dir: Path | None = None
-    workers: int = 0
-    intra_op_threads: int | None = None
-    max_queue: int = 64
-    realtime_steps: int = 3
+    workers: int = Field(0, ge=0)
+    intra_op_threads: int | None = Field(None, ge=1)
+    max_queue: int = Field(64, ge=1)
+    realtime_steps: int = Field(3, ge=1, le=100)
     default_voice: str = "F1"
     builder_url: str | None = None
+
+    @field_validator("api_key", mode="before")
+    @classmethod
+    def _blank_key_is_none(cls, value: Any) -> Any:
+        """Strip the key; an empty or whitespace-only key means "no key"."""
+        if isinstance(value, str):
+            return value.strip() or None
+        return value
+
+    @field_validator("data_dir", "model_dir", mode="after")
+    @classmethod
+    def _expand_home(cls, value: Path | None) -> Path | None:
+        """Expand a leading ``~`` (``.env`` files are not shell-expanded)."""
+        return value.expanduser() if value is not None else None
 
     def effective_workers(self) -> int:
         """Return the worker count; ``workers == 0`` means ``min(4, max(1, cpu_count // 2))``."""
@@ -41,7 +57,7 @@ class Settings(BaseSettings):
 
     def effective_intra_op_threads(self) -> int:
         """Return threads per worker; unset means ``ceil(cpu_count / effective_workers())``."""
-        if self.intra_op_threads is not None and self.intra_op_threads > 0:
+        if self.intra_op_threads is not None:
             return self.intra_op_threads
         return math.ceil((os.cpu_count() or 1) / self.effective_workers())
 

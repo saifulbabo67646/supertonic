@@ -58,3 +58,42 @@ def test_intra_op_threads_default_and_override(monkeypatch: pytest.MonkeyPatch) 
 def test_realtime_steps_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SUPERTONIC_REALTIME_STEPS", "5")
     assert Settings().realtime_steps == 5
+
+
+def test_data_dir_expands_home() -> None:
+    assert Settings(data_dir="~/st-data").data_dir == Path.home() / "st-data"  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("raw", ["", "   ", "\t\n"])
+def test_blank_api_key_is_none(raw: str) -> None:
+    assert Settings(api_key=raw).api_key is None
+    assert Settings(api_key=" k ").api_key == "k"
+
+
+@pytest.mark.parametrize(
+    "kw",
+    [
+        {"realtime_steps": 0},
+        {"realtime_steps": 101},
+        {"workers": -1},
+        {"max_queue": 0},
+        {"port": 0},
+        {"port": 65536},
+        {"intra_op_threads": 0},
+    ],
+)
+def test_bounds(kw: dict[str, int]) -> None:
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        Settings(**kw)  # type: ignore[arg-type]
+
+
+def test_dotenv_in_cwd_does_not_leak_into_tests(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Tests never read the developer's ./.env (D2)."""
+    (tmp_path / ".env").write_text("SUPERTONIC_PORT=1234\nSUPERTONIC_API_KEY=leak\n")
+    monkeypatch.chdir(tmp_path)
+    s = Settings()
+    assert (s.port, s.api_key) == (8787, None)

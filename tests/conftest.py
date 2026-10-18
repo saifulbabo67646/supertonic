@@ -27,12 +27,13 @@ if TYPE_CHECKING:
 
 @pytest.fixture(autouse=True)
 def _clean_supertonic_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Keep host SUPERTONIC_* variables from leaking into tests."""
+    """Keep host SUPERTONIC_* variables and the developer's ./.env out of tests."""
     import os
 
     for name in list(os.environ):
         if name.startswith("SUPERTONIC_"):
             monkeypatch.delenv(name)
+    monkeypatch.setitem(Settings.model_config, "env_file", None)
 
 
 @pytest.fixture
