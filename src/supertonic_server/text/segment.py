@@ -14,12 +14,15 @@ _PARAGRAPH = re.compile(r"\n\s*\n")
 # and optional closing quotes/brackets that stay attached to the sentence.
 _TERM = "。！？।॥؟…"
 _CLOSE = "\"'”’»」』）)\\]"
+# Possessive quantifiers plus the "not inside a run" lookbehinds keep matching linear: a run
+# of terminators is only ever tried from its first character, and never re-tried shorter.
 _SENTENCE = re.compile(
-    rf"(.*?(?:[{_TERM}]+[{_CLOSE}]*|[.!?]+[{_CLOSE}]*(?=\s|\Z))|.+)\s*", re.DOTALL
+    rf"(.*?(?:[{_TERM}]++[{_CLOSE}]*+|(?<![.!?])[.!?]++[{_CLOSE}]*+(?=\s|\Z))|.+)\s*",
+    re.DOTALL,
 )
 _WHITESPACE = re.compile(r"\s+")
 # A buffered sentence is complete after a no-space terminator or .!? plus whitespace.
-_COMPLETE = re.compile(rf"[{_TERM}]+[{_CLOSE}]*|[.!?]+[{_CLOSE}]*\s|\n\s*\n")
+_COMPLETE = re.compile(rf"[{_TERM}]++[{_CLOSE}]*+|(?<![.!?])[.!?]++[{_CLOSE}]*+\s|\n\s*\n")
 
 
 def sanitize(text: str, unsupported: Callable[[str], list[str]]) -> str:

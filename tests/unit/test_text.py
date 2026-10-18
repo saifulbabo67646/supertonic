@@ -140,3 +140,18 @@ def test_sentence_buffer_korean_limit() -> None:
     assert out and all(len(s) <= 120 for s in out)
     assert all(len(s) <= 120 for s in b.flush())
     assert SentenceBuffer(max_partial_length=50, lang="ko")._max_partial == 50
+
+
+@pytest.mark.parametrize("run", [".", "!", "…", "。", '."', "?)"])
+def test_long_terminator_runs_are_linear(run: str) -> None:
+    """Regression: long runs of terminators used to backtrack quadratically (minutes)."""
+    import time
+
+    text = run * 100_000 + "a"
+    start = time.perf_counter()
+    split_sentences(text, "en")
+    SentenceBuffer().append(text)
+    buf = SentenceBuffer()
+    for _ in range(200):
+        buf.append(run * 500)
+    assert time.perf_counter() - start < 1.0
