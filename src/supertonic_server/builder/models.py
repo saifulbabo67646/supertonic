@@ -52,6 +52,8 @@ class BuildRequest:
                 f"at most {MAX_TAGS} tags of up to {MAX_TAG_LEN} characters each",
                 param="tags",
             )
+        if any("," in t for t in self.tags):  # REST sends tags comma-separated
+            raise ApiError(400, "invalid_request", "tags cannot contain commas", param="tags")
         if self.method not in BUILD_METHODS:
             raise ApiError(
                 400,

@@ -197,3 +197,8 @@ def test_mcp_process_stays_thin() -> None:
     )
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
     assert out.stdout.strip() == "[]"
+
+
+async def test_tag_with_comma_refused_before_http(mcp: MCPServer, audio: str) -> None:
+    with pytest.raises(ToolError, match="tags cannot contain commas"):
+        await mcp.call_tool("build_voice", build_args(audio, tags=["news, calm"]))

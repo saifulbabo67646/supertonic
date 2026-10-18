@@ -216,6 +216,7 @@ def test_build_request_validation() -> None:
         ({"name": " "}, "invalid_request", "name"),
         ({"name": "x" * 101}, "invalid_request", "name"),
         ({"method": "slow"}, "invalid_request", "method"),
+        ({"tags": ["calm", "a,b"]}, "invalid_request", "tags"),
     ]:
         with pytest.raises(ApiError) as e:
             _request(**kw).validate()
@@ -250,3 +251,9 @@ def test_undecodable_message_names_no_temp_path(tmp_path: Path) -> None:
         assert temp not in message
     assert str(Path.home()) not in message
     assert message.startswith("x.wav: not decodable audio")
+
+
+def test_tags_with_commas_are_refused() -> None:
+    with pytest.raises(ApiError) as e:
+        _request(tags=["news, calm"]).validate()
+    assert e.value.message == "tags cannot contain commas"

@@ -71,11 +71,13 @@ def register_build_tools(server: MCPServer, client: SupertonicClient) -> None:
             consent: True only if the speaker agreed to their voice being cloned.
             method: ``"accurate"`` (default) or ``"fast"``.
             description: Optional description.
-            tags: Optional tags.
+            tags: Optional tags (no commas).
 
         Returns ``{job_id, state, method}``. When the job succeeds, ``get_job`` returns the
         new ``voice_id``, usable with ``speak``.
         """
+        if any("," in t for t in tags or []):  # the REST form sends them comma-separated
+            raise ToolError("tags cannot contain commas")
         files = await asyncio.to_thread(_check_files, audio_paths)
         try:
             job = await client.build(

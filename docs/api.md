@@ -177,7 +177,7 @@ derive from the Supertonic model, so the OpenRAIL-M terms apply to them too.
 |---|---|
 | `files` | 1 to 3 audio files (any common format), at most 25 MB in total; 3 to 60 s of speech after trimming |
 | `name` | required, at most 100 characters |
-| `description`, `tags` | optional; `tags` is comma-separated |
+| `description`, `tags` | optional; `tags` is comma-separated (so a tag cannot contain a comma) |
 | `source_note` | required: where the recording comes from |
 | `consent` | required, the string `true`: you have the right to clone this voice |
 | `method` | `accurate` (default, slow) or `fast` |
