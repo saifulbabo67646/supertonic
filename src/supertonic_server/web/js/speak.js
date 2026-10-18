@@ -236,12 +236,14 @@ function applyParams() {
     fillVoices(ui, allVoices);
     ui.voice.value = voice;
   }
-  // Drop the one-shot parameter so a reload does not override later choices.
-  if (voice) window.history.replaceState(null, "", "#/speak");
+  const language = pendingParams?.get("language");
+  if (language && languages.some((l) => l.code === language)) ui.language.value = language;
+  // Drop the one-shot parameters so a reload does not override later choices.
+  if (voice || language) window.history.replaceState(null, "", "#/speak");
   pendingParams = null;
 }
 
-/** Called on every visit; `?voice=<id>` preselects a voice. */
+/** Called on every visit; `?voice=<id>&language=<code>` preselect a voice and language. */
 export function show(params) {
   pendingParams = params;
   if (allVoices.length) applyParams();

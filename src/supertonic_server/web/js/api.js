@@ -111,3 +111,21 @@ export const deleteVoice = (voiceId) =>
 /** POST /v1/voices/import with multipart form data (file, name, description, tags, source_note). */
 export const importVoice = (formData) =>
   getJson("/v1/voices/import", { method: "POST", body: formData });
+
+/** POST /v1/voices/build with multipart form data (files, name, ..., consent, method) → Job. */
+export const buildVoice = (formData) =>
+  getJson("/v1/voices/build", { method: "POST", body: formData });
+
+/** GET /v1/jobs → array of jobs, newest first. */
+export const jobs = async (limit = 10) => (await getJson(`/v1/jobs?limit=${limit}`)).data;
+
+/** GET /v1/jobs/{id} → Job. */
+export const job = (jobId) => getJson(`/v1/jobs/${encodeURIComponent(jobId)}`);
+
+/** DELETE /v1/jobs/{id}: cancel a queued or running build → Job. */
+export const cancelJob = (jobId) =>
+  getJson(`/v1/jobs/${encodeURIComponent(jobId)}`, { method: "DELETE" });
+
+/** POST /v1/jobs/{id}/finish: stop optimising and keep the best result so far → Job. */
+export const finishJob = (jobId) =>
+  getJson(`/v1/jobs/${encodeURIComponent(jobId)}/finish`, { method: "POST" });

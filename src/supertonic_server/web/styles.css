@@ -643,10 +643,9 @@ textarea.script::placeholder {
 .voice-card.custom {
   border-top: 3px solid var(--accent);
 }
-.voice-card.soon {
-  background: transparent;
-  border-style: dashed;
-  color: var(--muted);
+.voice-card.highlight {
+  outline: 3px solid var(--signal);
+  outline-offset: 2px;
 }
 .card-head {
   display: flex;
@@ -790,6 +789,272 @@ textarea.script::placeholder {
   border-radius: var(--r-control);
   overflow-x: auto;
   line-height: 1.55;
+}
+
+/* Build metadata (voice cards, build results) */
+
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin: 0;
+  font-size: 0.875rem;
+}
+.facts div {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+}
+.facts dt {
+  color: var(--muted);
+}
+.facts dd {
+  margin: 0;
+  font-family: var(--font-code);
+  font-size: 0.8125rem;
+}
+.build-entry {
+  margin-top: 8px;
+}
+.build-entry .btn {
+  justify-self: start;
+}
+
+/* New voice */
+
+.back {
+  font-size: 0.875rem;
+  text-decoration: none;
+  justify-self: start;
+}
+.back:hover {
+  text-decoration: underline;
+}
+.new-voice-body {
+  display: grid;
+  gap: 24px;
+}
+.build {
+  display: grid;
+  gap: 8px;
+  max-width: 760px;
+}
+.build-form {
+  display: grid;
+  gap: 18px;
+  margin-top: 8px;
+}
+.clip-picker {
+  display: grid;
+  gap: 12px;
+}
+.dropzone {
+  display: grid;
+  gap: 8px;
+  padding: 18px;
+  border: 2px dashed var(--line);
+  border-radius: var(--r-panel);
+  background: var(--surface-2);
+}
+.dropzone label {
+  font-weight: 500;
+}
+.dropzone.over {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.dropzone input[type="file"] {
+  background: var(--surface);
+}
+.clips {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.clips:empty {
+  display: none;
+}
+.clips li,
+.job-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+  background: var(--surface);
+}
+.clip-name,
+.job-name {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.clips li .btn,
+.job-list li .btn {
+  margin-left: auto;
+}
+.recorder {
+  display: grid;
+  gap: 8px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-panel);
+}
+.recorder h3 {
+  font-size: 0.9375rem;
+  font-weight: 500;
+}
+.recorder-body {
+  display: grid;
+  gap: 10px;
+}
+.recorder audio {
+  width: 100%;
+}
+.rec-live {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.rec-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--danger);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+.rec-time {
+  font-family: var(--font-code);
+  font-size: 1.125rem;
+  min-width: 4ch;
+}
+.level {
+  flex: 1;
+  height: 10px;
+  border-radius: 5px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+.level-fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--signal);
+}
+.methods {
+  display: grid;
+  gap: 8px;
+}
+.methods legend {
+  margin-bottom: 4px;
+  padding: 0;
+}
+.choice,
+.check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 0.9375rem;
+}
+.choice input,
+.check input {
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+  flex: none;
+  accent-color: var(--accent);
+}
+.choice:has(input:disabled) {
+  color: var(--muted);
+}
+.check label {
+  font-weight: 500;
+}
+.licence {
+  padding-left: 12px;
+  border-left: 3px solid var(--line);
+}
+.job {
+  display: grid;
+  gap: 12px;
+  max-width: 760px;
+  border-left: 4px solid var(--accent);
+  scroll-margin-top: 96px;
+}
+.job h2 {
+  overflow-wrap: anywhere;
+  outline: none;
+}
+.job-stage {
+  font-weight: 500;
+}
+.job .confirm:empty,
+.job .hint:empty {
+  display: none;
+}
+.job-stage:empty {
+  display: none;
+}
+.job-progress {
+  display: grid;
+  gap: 4px;
+}
+.job-progress progress {
+  width: 100%;
+  height: 12px;
+  accent-color: var(--accent);
+}
+.job-actions {
+  gap: 12px;
+}
+.finish-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+.job-result {
+  display: grid;
+  gap: 10px;
+}
+.job-result:empty {
+  display: none;
+}
+.badge.state-running,
+.badge.state-queued {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.badge.state-succeeded {
+  background: var(--surface-2);
+  color: var(--ok);
+}
+.badge.state-failed {
+  background: var(--surface-2);
+  color: var(--danger);
+}
+.job-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.recent {
+  max-width: 760px;
+}
+.notice.panel {
+  max-width: 62ch;
 }
 
 /* Key dialog */

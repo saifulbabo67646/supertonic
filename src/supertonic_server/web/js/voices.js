@@ -1,8 +1,10 @@
-// Voices screen: library of preset and custom voices with preview, edit, export and delete.
+// Voices screen: library of preset and custom voices with preview, edit, export and delete;
+// the entry point to building a new voice.
 
 import * as api from "./api.js";
 import { playPreview } from "./audio.js";
-import { getLanguages, getVoices, onVoicesChanged, refreshVoices } from "./catalog.js";
+import { buildFacts, NO_BUILDER_TEXT } from "./build-copy.js";
+import { getHealth, getLanguages, getVoices, onVoicesChanged, refreshVoices } from "./catalog.js";
 import { downloadBlob, h, replace, statusLine } from "./dom.js";
 import { buildImportForm } from "./voice-import.js";
 import { confirmDelete, editForm } from "./voice-manage.js";
@@ -65,7 +67,7 @@ function card(voice) {
   );
   const article = h(
     "article",
-    { class: `voice-card ${voice.kind}` },
+    { class: `voice-card ${voice.kind}`, "data-voice-id": voice.id, tabindex: "-1" },
     h(
       "div",
       { class: "card-head" },
@@ -90,6 +92,7 @@ function card(voice) {
         )
       : null,
     voice.source_note ? h("p", { class: "hint", text: `Source: ${voice.source_note}` }) : null,
+    voice.build ? buildFacts(voice.build) : null,
     actions,
     area,
   );
@@ -114,29 +117,14 @@ function card(voice) {
   return article;
 }
 
-function comingSoonCard() {
-  return h(
-    "article",
-    { class: "voice-card soon", "aria-disabled": "true" },
-    h("div", { class: "card-head" }, h("h3", { text: "New voice from recording" })),
-    h("p", { class: "description", text: "Coming in the next release (voice building)" }),
-    h(
-      "div",
-      { class: "card-actions" },
-      h("button", { type: "button", class: "btn small", disabled: true, text: "Record a voice" }),
-    ),
-  );
-}
-
 function render() {
   const shown = voices.filter((v) => kindFilter === "all" || v.kind === kindFilter);
   const cards = shown.map(card);
-  if (kindFilter !== "preset") cards.push(comingSoonCard());
   if (kindFilter === "custom" && !shown.length) {
     cards.unshift(
       h("p", {
         class: "empty",
-        text: "No custom voices yet. Import a style JSON below to add one.",
+        text: "No custom voices yet. Build one from a recording, or import a style JSON below.",
       }),
     );
   }
@@ -177,6 +165,7 @@ function filterBar() {
 /** Build the screen once. */
 export function mount(root) {
   ui.status = statusLine();
+  ui.build = h("div", { class: "build-entry" });
   ui.list = h("div", { class: "voice-grid", tabindex: "-1", "aria-label": "Voice library" });
   const imported = async (voice) => {
     if (kindFilter === "preset") {
@@ -192,8 +181,9 @@ export function mount(root) {
       { class: "view-head" },
       h("h1", { id: "voices-title", text: "Voices" }),
       h("p", {
-        text: "Preview the built-in voices, and manage custom voices imported as style JSON.",
+        text: "Preview the built-in voices, build new ones from a recording, and manage custom voices.",
       }),
+      ui.build,
     ),
     filterBar(),
     ui.status,
@@ -206,8 +196,39 @@ export function mount(root) {
   });
 }
 
-/** Refresh on every visit. */
-export async function show() {
+/** "New voice" when the server has a builder; otherwise how to enable one. */
+async function renderBuildEntry() {
+  let builder = "none";
+  try {
+    builder = (await getHealth()).builder;
+  } catch {
+    // The status line already reports an unreachable server.
+  }
+  replace(
+    ui.build,
+    builder === "none"
+      ? h("p", { class: "hint", text: NO_BUILDER_TEXT })
+      : h("a", { class: "btn primary", href: "#/voices/new", text: "New voice" }),
+  );
+}
+
+/** Scroll to and focus the card for `voiceId` (from a "voice card" link). */
+function focusCard(voiceId) {
+  const target = [...ui.list.querySelectorAll(".voice-card")].find(
+    (el) => el.dataset.voiceId === voiceId,
+  );
+  if (!target) return;
+  for (const el of ui.list.querySelectorAll(".voice-card.highlight")) {
+    el.classList.remove("highlight");
+  }
+  target.classList.add("highlight");
+  target.scrollIntoView({ block: "center" });
+  target.focus({ preventScroll: true });
+}
+
+/** Refresh on every visit; `?voice=<id>` scrolls to that voice's card. */
+export async function show(params) {
+  renderBuildEntry();
   try {
     const [langs, list] = await Promise.all([getLanguages(), getVoices()]);
     languages = langs;
@@ -215,5 +236,16 @@ export async function show() {
     render();
   } catch (err) {
     ui.status.set(`Could not load voices: ${err.message}`, "error");
+    return;
+  }
+  const wanted = params?.get("voice");
+  if (wanted) {
+    if (kindFilter === "preset" && voices.some((v) => v.id === wanted && v.kind === "custom")) {
+      kindFilter = "all";
+      ui.filter.querySelector("input[value=all]").checked = true;
+      render();
+    }
+    focusCard(wanted);
+    window.history.replaceState(null, "", "#/voices");
   }
 }

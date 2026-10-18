@@ -15,6 +15,9 @@ arguments. Behaviour comes from the environment:
   - ``hang``: starts a sleeping child process (the "tree"), then sleeps, ignoring the stop file.
   - ``crash``: a progress event and a traceback on stderr, then exit code 3, no terminal event.
   - ``error:<code>``: an error event with ``code`` (exit code 1).
+  - ``slow``: every stage, with ``FAKE_BUILDER_STEPS`` (default 30) ``timbre`` steps of
+    ``FAKE_BUILDER_STEP_S`` seconds (default 0.5) each; the stop file ends the steps early.
+    For trying the web UI by hand (progress, ETA, Finish now, Cancel).
 """
 
 from __future__ import annotations
@@ -37,35 +40,59 @@ def _emit(obj: dict[str, Any]) -> None:
     sys.stdout.flush()
 
 
-def _progress(stage: str, message: str, step: int | None = None) -> None:
+def _progress(
+    stage: str, message: str, step: int | None = None, total: int = 3, loss: float = 0.5
+) -> None:
     at = datetime.now(UTC).isoformat()
     _emit(
         {
             "type": "progress",
             "stage": stage,
             "step": step,
-            "total": 3 if step is not None else None,
-            "loss": 0.5 if step is not None else None,
+            "total": total if step is not None else None,
+            "loss": loss if step is not None else None,
             "message": message,
             "at": at,
         }
     )
 
 
-def _done(args: argparse.Namespace, stopped: bool) -> int:
+def _slow(args: argparse.Namespace) -> int:
+    total = int(os.environ.get("FAKE_BUILDER_STEPS", "30"))
+    delay = float(os.environ.get("FAKE_BUILDER_STEP_S", "0.5"))
+    for stage in ("loading", "preset"):
+        _progress(stage, f"fake: {stage}")
+        time.sleep(delay * 2)
+    step = 0
+    while step < total and not args.stop_file.exists():
+        step += 1
+        _progress("timbre", f"fake: step {step}", step=step, total=total, loss=0.5 / step)
+        time.sleep(delay)
+    stopped = args.stop_file.exists()
+    for stage in ("duration", "saving"):
+        _progress(stage, f"fake: {stage}")
+        time.sleep(delay * 2)
+    return _done(args, stopped, steps=step, loss=0.5 / max(step, 1))
+
+
+def _done(
+    args: argparse.Namespace, stopped: bool, steps: int | None = None, loss: float = 0.25
+) -> int:
     from supertonic_server.builder.extract.fake import make_style
 
     report = {
         "method": args.method,
         "preset_start": "F1",
         "preset_distance": 0.5,
-        "loss": 0.25,
-        "steps": 1 if stopped else 3,
+        "loss": loss,
+        "steps": steps if steps is not None else (1 if stopped else 3),
         "duration_status": "converged",
         "rate_ref": 3.0,
         "rate_final": 3.0,
         "stopped_early": stopped,
     }
+    if steps is not None and args.method == "accurate":
+        report["similarity"] = round(1 - loss, 4)
     args.out.write_text(json.dumps(make_style()), encoding="utf-8")
     args.report.write_text(json.dumps(report), encoding="utf-8")
     _emit({"type": "done", "report": report})
@@ -111,6 +138,8 @@ def main() -> int:
         for i in range(2500):
             _progress("timbre", "fake: flooding " + "x" * 100, step=i)
             sys.stderr.write(f"log line {i} " + "y" * 200 + "\n")
+    if mode == "slow":
+        return _slow(args)
     _progress("loading", "fake: loading")
     if mode == "gate":
         _progress("timbre", "fake: timbre", step=1)
