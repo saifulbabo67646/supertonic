@@ -134,6 +134,7 @@ def test_shared_finish_reports_and_passes_extras(tmp_path: Path) -> None:
 
     ttl, dp = torch.ones(1, 50, 256), torch.ones(1, 8, 16)
     events: list[Progress] = []
+    checks = iter([False])  # no stop when timbre ended; one arrives as the rhythm stage starts
     style, report = finish_with_duration(
         "accurate",
         _wav(tmp_path),
@@ -143,7 +144,7 @@ def test_shared_finish_reports_and_passes_extras(tmp_path: Path) -> None:
         object(),  # type: ignore[arg-type]  # a stop means the TTS is never used
         DurationConfig(),
         on_progress=events.append,
-        should_stop=lambda: True,
+        should_stop=lambda: next(checks, True),
         preset_start="F1",
         preset_distance=0.74351,
         loss=0.2783,
