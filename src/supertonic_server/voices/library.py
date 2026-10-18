@@ -212,3 +212,30 @@ class VoiceLibrary:
         voice = self.get(voice_id)
         base = self.custom_dir / (_PRESET_PREVIEW_DIR if voice.kind == "preset" else "")
         return base / voice.id / "previews" / f"{lang}.wav"
+
+    def save_preview(self, voice_id: str, lang: str, wav: bytes) -> Path:
+        """Store a rendered preview WAV atomically and return its path.
+
+        Never recreates the folder of a voice deleted in the meantime: the voice must still
+        exist (checked under the library lock) and, for custom voices, so must its folder.
+
+        Raises:
+            ApiError: 404 ``voice_not_found`` when the voice is gone.
+        """
+        with self._lock:
+            voice = self.get(voice_id)
+            path = self.preview_path(voice.id, lang)
+            if voice.kind == "custom" and not (self.custom_dir / voice.id).is_dir():
+                raise ApiError(
+                    404, "voice_not_found", f"Voice '{voice_id}' not found", param="voice"
+                )
+            path.parent.mkdir(parents=True, exist_ok=True)
+            fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=path.name, suffix=".tmp")
+            try:
+                with os.fdopen(fd, "wb") as fh:
+                    fh.write(wav)
+                os.replace(tmp, path)
+            except BaseException:
+                Path(tmp).unlink(missing_ok=True)
+                raise
+            return path

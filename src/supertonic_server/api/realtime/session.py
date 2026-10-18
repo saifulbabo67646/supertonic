@@ -21,6 +21,7 @@ import uuid
 from functools import partial
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
 from fastapi import APIRouter, WebSocket
 from starlette.websockets import WebSocketDisconnect
 
@@ -51,6 +52,11 @@ MAX_PENDING_CHARS = MAX_INPUT_CHARS
 
 _POLICY_VIOLATION = 1008
 _TRY_AGAIN_LATER = 1013
+
+
+def _pcm_base64(audio: np.ndarray, src_rate: int, rate: int) -> str:
+    """Resample, convert to PCM16 and base64-encode one sentence (run in a thread)."""
+    return base64.b64encode(to_pcm16(resample(audio, src_rate, rate))).decode("ascii")
 
 
 def _new_id(prefix: str) -> str:
@@ -276,8 +282,7 @@ class Session:
         audio = await engine.synth(
             entry.text, v.style, v.language, v.speed, steps, PRIORITY_REALTIME
         )
-        pcm = to_pcm16(resample(audio, engine.sample_rate, self.sample_rate))
-        return base64.b64encode(pcm).decode("ascii")
+        return await asyncio.to_thread(_pcm_base64, audio, engine.sample_rate, self.sample_rate)
 
     def _fail(self, ctx: Context, item_id: str, exc: ApiError) -> None:
         """Report a failed item; its remaining sentences, buffer and ``done`` are dropped."""

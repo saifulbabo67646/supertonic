@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import hmac
-import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -78,9 +77,5 @@ async def preview(state: AppState, voice_id: str, lang: str) -> Path:
         audio, _ = await state.engine.render(
             sample, style, lang, PREVIEW_SPEED, PREVIEW_STEPS, PRIORITY_DEFAULT
         )
-        data = encode(audio, state.engine.sample_rate, "wav")
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(f".{os.getpid()}.tmp")
-        tmp.write_bytes(data)
-        tmp.replace(path)
-    return path
+        data = await asyncio.to_thread(encode, audio, state.engine.sample_rate, "wav")
+        return await asyncio.to_thread(state.library.save_preview, voice_id, lang, data)

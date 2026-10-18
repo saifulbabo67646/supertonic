@@ -100,7 +100,8 @@ class Engine:
         outstanding work, so queued sentences never run.
         """
         _validate(speed, steps)
-        sentences = self.prepare(text, lang)
+        # Sanitising and splitting are linear but can take a while on 100 000 characters.
+        sentences = await asyncio.to_thread(self.prepare, text, lang)
 
         def start(i: int) -> asyncio.Task[np.ndarray] | None:
             if i >= len(sentences):

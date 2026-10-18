@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import AsyncGenerator
 from typing import Any
@@ -37,6 +38,16 @@ def _target_rate(req: SpeechRequest) -> int:
     return rate
 
 
+def _pcm(audio: np.ndarray, src_rate: int, rate: int) -> bytes:
+    """Resample one sentence and convert it to PCM16 (CPU work; run in a thread)."""
+    return to_pcm16(resample(audio, src_rate, rate))
+
+
+def _encode_render(audio: np.ndarray, src_rate: int, rate: int, fmt: str) -> bytes:
+    """Resample and encode a full render (CPU work and ffmpeg; run in a thread)."""
+    return encode(resample(audio, src_rate, rate), rate, fmt)
+
+
 async def _body(
     first: Chunk,
     chunks: AsyncGenerator[Chunk, None],
@@ -56,7 +67,7 @@ async def _body(
         while chunk is not None:
             if chunk is not first:
                 yield gap
-            yield to_pcm16(resample(chunk.audio, src_rate, rate))
+            yield await asyncio.to_thread(_pcm, chunk.audio, src_rate, rate)
             chunk = await anext(chunks, None)
     finally:
         await chunks.aclose()
@@ -76,7 +87,8 @@ async def speech(req: SpeechRequest, state: State) -> Response:
 
     if req.response_format not in ("pcm", "wav"):
         audio, _ = await engine.render(*args)
-        data = encode(resample(audio, engine.sample_rate, rate), rate, req.response_format)
+        fmt = req.response_format
+        data = await asyncio.to_thread(_encode_render, audio, engine.sample_rate, rate, fmt)
         return Response(data, media_type=media, headers=headers)
 
     chunks = engine.stream(*args)
