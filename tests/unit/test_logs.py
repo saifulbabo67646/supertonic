@@ -15,6 +15,8 @@ from supertonic_server.core.logs import RedactApiKeyFilter, redact_api_key
         ("/v1/audio/speech/websocket?api_key=s3cr3t", "/v1/audio/speech/websocket?api_key=***"),
         ("/ws?voice=F1&api_key=abc&speed=1.2", "/ws?voice=F1&api_key=***&speed=1.2"),
         ("/ws?API_KEY=abc", "/ws?API_KEY=***"),
+        ("/ws?api%5Fkey=abc&x=1", "/ws?api%5Fkey=***&x=1"),
+        ("/ws?api%5FKEY=abc", "/ws?api%5FKEY=***"),
         ("/ws?api_key=a%20b c", "/ws?api_key=*** c"),
         ("/v1/health", "/v1/health"),
     ],
@@ -37,6 +39,20 @@ def test_filter_rewrites_uvicorn_access_record() -> None:
     assert "s3cr3t" not in record.getMessage() and "api_key=***" in record.getMessage()
 
 
+def test_filter_rewrites_uvicorn_error_websocket_record() -> None:
+    record = logging.LogRecord(
+        "uvicorn.error",
+        logging.INFO,
+        __file__,
+        1,
+        '%s - "WebSocket %s" [accepted]',
+        ("127.0.0.1:5000", "/v1/audio/speech/websocket?api_key=secret"),
+        None,
+    )
+    assert RedactApiKeyFilter().filter(record) is True
+    assert "secret" not in record.getMessage() and "api_key=***" in record.getMessage()
+
+
 def test_cli_installs_filter(monkeypatch: pytest.MonkeyPatch, tmp_path: object) -> None:
     import uvicorn
 
@@ -44,10 +60,12 @@ def test_cli_installs_filter(monkeypatch: pytest.MonkeyPatch, tmp_path: object) 
 
     monkeypatch.setenv("SUPERTONIC_DATA_DIR", str(tmp_path))
     monkeypatch.setattr(uvicorn.Server, "run", lambda self, sockets=None: None)
-    access = logging.getLogger("uvicorn.access")
-    before = list(access.filters)
+    loggers = [logging.getLogger(n) for n in ("uvicorn.access", "uvicorn.error")]
+    before = [list(lg.filters) for lg in loggers]
     try:
         main(["serve"])
-        assert any(isinstance(f, RedactApiKeyFilter) for f in access.filters)
+        for lg in loggers:
+            assert any(isinstance(f, RedactApiKeyFilter) for f in lg.filters), lg.name
     finally:
-        access.filters[:] = before
+        for lg, filters in zip(loggers, before, strict=True):
+            lg.filters[:] = filters

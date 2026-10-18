@@ -14,7 +14,7 @@ from starlette.websockets import WebSocketDisconnect
 
 from conftest import WS_PATH
 from supertonic_server.api import create_app
-from supertonic_server.api.guard import MAX_BODY_BYTES, MAX_IMPORT_BODY_BYTES
+from supertonic_server.api.guard import MAX_BODY_BYTES, MAX_IMPORT_BODY_BYTES, Guard, _body_limit
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -175,3 +175,31 @@ def test_websocket_bad_key_still_explained(keyed_app: FastAPI) -> None:
         assert exc.value.code == 1008
     with TestClient(keyed_app).websocket_connect(WS_PATH, headers=KEY) as ws:
         assert ws.receive_json()["type"] == "session.created"
+
+
+def _scope(path: str, root_path: str, method: str = "POST") -> dict[str, Any]:
+    return {
+        "type": "http",
+        "method": method,
+        "path": path,
+        "root_path": root_path,
+        "query_string": b"",
+        "headers": [],
+    }
+
+
+async def _noop_app(scope: Any, receive: Any, send: Any) -> None:
+    raise AssertionError("not reached")
+
+
+def test_guard_honours_root_path() -> None:
+    guard = Guard(_noop_app, "secret")
+    rejection = guard.check(_scope("/api/v1/voices", "/api", "GET"))
+    assert rejection is not None and rejection.status == 401
+    assert guard.check(_scope("/api/v1/health", "/api", "GET")) is None
+    assert guard.check(_scope("/api/docs", "/api", "GET")) is not None
+
+
+def test_body_limit_honours_root_path() -> None:
+    assert _body_limit(_scope("/api/v1/voices/import", "/api")) == MAX_IMPORT_BODY_BYTES
+    assert _body_limit(_scope("/api/v1/audio/speech", "/api")) == MAX_BODY_BYTES

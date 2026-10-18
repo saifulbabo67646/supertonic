@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import re
 
-_API_KEY = re.compile(r"(\bapi_key=)[^&\s\"']*", re.IGNORECASE)
+_API_KEY = re.compile(r"(\bapi(?:_|%5f)key=)[^&\s\"']*", re.IGNORECASE)
 
 
 def redact_api_key(text: str) -> str:

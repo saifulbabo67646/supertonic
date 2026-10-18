@@ -25,6 +25,7 @@ import contextlib
 import hmac
 from typing import TYPE_CHECKING, Any
 
+from starlette._utils import get_route_path
 from starlette.datastructures import Headers, QueryParams
 from starlette.responses import JSONResponse
 
@@ -153,7 +154,7 @@ class Guard:
 
 
 def _protected(scope: Scope) -> bool:
-    path: str = scope["path"]
+    path = get_route_path(scope)
     if path in DOCS_PATHS:
         return True
     if path != "/v1" and not path.startswith("/v1/"):
@@ -162,7 +163,7 @@ def _protected(scope: Scope) -> bool:
 
 
 def _body_limit(scope: Scope) -> int:
-    if scope["method"] == "POST" and scope["path"] == "/v1/voices/import":
+    if scope["method"] == "POST" and get_route_path(scope) == "/v1/voices/import":
         return MAX_IMPORT_BODY_BYTES
     return MAX_BODY_BYTES
 

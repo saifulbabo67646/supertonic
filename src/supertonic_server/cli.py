@@ -38,5 +38,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     print(f"Supertonic server: http://{settings.host}:{settings.port} ({auth})", flush=True)
     server = uvicorn.Server(uvicorn.Config(app, host=settings.host, port=settings.port))
     # uvicorn configures its loggers in Config(); add the filter afterwards so it sticks.
-    logging.getLogger("uvicorn.access").addFilter(RedactApiKeyFilter())
+    # uvicorn.error also logs the WebSocket path (query string included) on accept.
+    for name in ("uvicorn.access", "uvicorn.error"):
+        logging.getLogger(name).addFilter(RedactApiKeyFilter())
     server.run()
