@@ -37,6 +37,19 @@ class Context:
         """Characters of queued sentences not yet taken by the consumer."""
 
     @property
+    def idle(self) -> bool:
+        """True when nothing is buffered, queued, open or being synthesised.
+
+        An idle context holds only its voice settings and may be forgotten by the session.
+        """
+        return (
+            not len(self.buffer)
+            and self.queue.empty()
+            and self.item_id is None
+            and self.task is None
+        )
+
+    @property
     def pending_chars(self) -> int:
         """Buffered plus queued characters that have not been synthesised yet."""
         return len(self.buffer) + self.queued_chars

@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 MAX_CONTEXTS = 32
-"""Contexts one socket may open; more is almost certainly a client bug."""
+"""Live contexts one socket may hold; idle ones are forgotten (oldest first) to make room."""
 
 MAX_ACTIVE_CONTEXTS = 4
 """Contexts of one socket that may synthesise at the same time; others wait their turn."""
@@ -126,6 +126,8 @@ class Session:
         ctx = self.contexts.get(context_id)
         if ctx is None:
             if len(self.contexts) >= MAX_CONTEXTS:
+                self._evict_idle()
+            if len(self.contexts) >= MAX_CONTEXTS:
                 raise ApiError(
                     400,
                     "too_many_contexts",
@@ -134,6 +136,13 @@ class Session:
                 )
             ctx = self.contexts[context_id] = Context(context_id, self.defaults, self.max_partial)
         return ctx
+
+    def _evict_idle(self) -> None:
+        """Forget the oldest idle context (its per-context settings revert to the defaults)."""
+        for cid, ctx in self.contexts.items():
+            if ctx.idle:
+                del self.contexts[cid]
+                return
 
     def _update(self, event: p.SessionUpdate) -> None:
         library = self.state.library
@@ -207,7 +216,7 @@ class Session:
             self._start_consumer(ctx)
 
     def _start_consumer(self, ctx: Context) -> None:
-        task = asyncio.create_task(self._consume(ctx, ctx.queue))
+        task = asyncio.create_task(self._consume(ctx))
         task.add_done_callback(partial(self._consumer_done, ctx))
         ctx.task = task
 
@@ -226,9 +235,16 @@ class Session:
         if not self._closing and ctx.task is None and not ctx.queue.empty():
             self._start_consumer(ctx)
 
-    async def _consume(self, ctx: Context, queue: asyncio.Queue[Entry]) -> None:
-        while True:
-            entry = await queue.get()
+    async def _consume(self, ctx: Context) -> None:
+        """Synthesise queued entries in order; exit (clearing ``ctx.task``) once drained.
+
+        The check for an empty queue and the reset of ``ctx.task`` happen without an await
+        in between, so :meth:`_put` either sees this consumer still draining or starts a new
+        one; an idle context therefore holds no task.
+        """
+        queue = ctx.queue
+        while not queue.empty():
+            entry = queue.get_nowait()
             if entry.text is not None:
                 ctx.queued_chars -= len(entry.text)
             if entry.item_id == ctx.failed_item:
@@ -248,6 +264,8 @@ class Session:
                 self._fail(ctx, entry.item_id, err)
             else:
                 self.emit(p.audio_delta(ctx.id, entry.item_id, delta))
+        if ctx.task is asyncio.current_task():
+            ctx.task = None
 
     async def _synth(self, entry: Entry) -> str:
         """Synthesise one sentence; return base64 PCM16 at the session's sample rate."""

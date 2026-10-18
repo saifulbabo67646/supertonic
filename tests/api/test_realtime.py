@@ -473,3 +473,34 @@ def test_prepare_error_fails_item_once(
     assert _deltas(msgs) + _deltas(rest) and all(  # "Good." may or may not have been sent
         m["item_id"] in (item, rest[-1]["item_id"]) for m in _deltas(msgs) + _deltas(rest)
     )
+
+
+def test_many_sequential_contexts_each_get_done(ws: WebSocketTestSession) -> None:
+    """One context_id per turn must not exhaust the per-socket context limit (C1)."""
+    recv_json(ws)
+    for i in range(100):
+        ctx = f"turn-{i}"
+        ws.send_json({"type": "input_text_buffer.append", "text": "Hi.", "context_id": ctx})
+        ws.send_json({"type": "input_text_buffer.commit", "context_id": ctx})
+        msgs = recv_until(ws, DONE)
+        assert not [m for m in msgs if m["type"] == FAILED], msgs
+        assert msgs[-1]["context_id"] == ctx
+
+
+def test_live_contexts_are_capped(ws: WebSocketTestSession) -> None:
+    """Contexts holding unfinished text count against the cap; idle ones are evicted."""
+    from supertonic_server.api.realtime.session import MAX_CONTEXTS
+
+    recv_json(ws)
+    for i in range(MAX_CONTEXTS):
+        ws.send_json({"type": "input_text_buffer.append", "text": "open", "context_id": f"c{i}"})
+        assert recv_json(ws)["type"] == "conversation.item.input_text.received"
+    ws.send_json({"type": "input_text_buffer.append", "text": "open", "context_id": "extra"})
+    m = recv_json(ws)
+    assert m["type"] == FAILED and m["error"]["code"] == "too_many_contexts"
+    ws.send_json({"type": "context.cancel", "context_id": "c0"})
+    assert recv_json(ws)["type"] == "context.cancelled"
+    ws.send_json({"type": "input_text_buffer.append", "text": "Now.", "context_id": "extra"})
+    ws.send_json({"type": "input_text_buffer.commit", "context_id": "extra"})
+    msgs = recv_until(ws, DONE)
+    assert not [m for m in msgs if m["type"] == FAILED]
