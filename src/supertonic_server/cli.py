@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 from collections.abc import Sequence
 
 from pydantic import ValidationError
 
 from supertonic_server.core.config import ConfigError, Settings
+from supertonic_server.core.logs import RedactApiKeyFilter
 
 
 def main(argv: Sequence[str] | None = None) -> None:
@@ -34,4 +36,7 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     auth = "API key required" if settings.api_key else "no API key required"
     print(f"Supertonic server: http://{settings.host}:{settings.port} ({auth})", flush=True)
-    uvicorn.run(app, host=settings.host, port=settings.port)
+    server = uvicorn.Server(uvicorn.Config(app, host=settings.host, port=settings.port))
+    # uvicorn configures its loggers in Config(); add the filter afterwards so it sticks.
+    logging.getLogger("uvicorn.access").addFilter(RedactApiKeyFilter())
+    server.run()
