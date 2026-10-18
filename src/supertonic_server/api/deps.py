@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from fastapi import Request
+from starlette.requests import HTTPConnection
 
 from supertonic_server.audio import encode
 from supertonic_server.core.errors import ApiError
@@ -43,8 +44,9 @@ def get_state(request: Request) -> AppState:
     return state
 
 
-def _bearer(request: Request) -> str:
-    header = request.headers.get("authorization", "")
+def bearer_token(conn: HTTPConnection) -> str:
+    """Return the token of an ``Authorization: Bearer`` header, or ``""``."""
+    header = conn.headers.get("authorization", "")
     scheme, _, token = header.partition(" ")
     return token.strip() if scheme.lower() == "bearer" else ""
 
@@ -54,7 +56,7 @@ async def require_key(request: Request) -> None:
     key = request.app.state.api_key
     if not key:
         return
-    if not hmac.compare_digest(_bearer(request).encode(), key.encode()):
+    if not hmac.compare_digest(bearer_token(request).encode(), key.encode()):
         raise ApiError(
             401, "invalid_api_key", "Incorrect or missing API key", type_="authentication_error"
         )

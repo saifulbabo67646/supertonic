@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable, Iterator
+from contextlib import AbstractContextManager
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
+import anyio
 import httpx
 import pytest
+from starlette.testclient import TestClient, WebSocketTestSession
 from supertonic.core import Style
 
 from supertonic_server.api import create_app
@@ -88,3 +91,67 @@ async def authed_client(
     keyed = settings.model_copy(update={"api_key": "secret"})
     async with _client(create_app(keyed, engine, lib)) as c:
         yield c
+
+
+WS_PATH = "/v1/audio/speech/websocket"
+WsFactory = Callable[[str], AbstractContextManager[WebSocketTestSession]]
+
+
+def recv_json(ws: WebSocketTestSession, timeout: float = 5.0) -> dict[str, Any]:
+    """Receive one JSON message, failing the test instead of hanging after ``timeout`` s."""
+
+    async def receive() -> Any:
+        with anyio.fail_after(timeout):
+            # Private attribute: TestClient's own receive() has no timeout.
+            return await ws._send_rx.receive()
+
+    message = ws.portal.call(receive)
+    if message["type"] == "websocket.close":
+        raise AssertionError(f"socket closed: {message}")
+    data: dict[str, Any] = json.loads(message["text"])
+    return data
+
+
+def recv_until(ws: WebSocketTestSession, type_: str, timeout: float = 5.0) -> list[dict[str, Any]]:
+    """Collect messages up to and including the first one of type ``type_``."""
+    msgs: list[dict[str, Any]] = []
+    while True:
+        msgs.append(recv_json(ws, timeout))
+        if msgs[-1]["type"] == type_:
+            return msgs
+
+
+def _ws_factory(app: FastAPI) -> WsFactory:
+    client = TestClient(app)
+    return lambda query: client.websocket_connect(WS_PATH + query)
+
+
+@pytest.fixture
+def client_ws_factory(settings: Settings, engine: Engine, lib: VoiceLibrary) -> WsFactory:
+    """Open WebSockets (``factory("?voice=M1")``) on an app without authentication."""
+    return _ws_factory(create_app(settings, engine, lib))
+
+
+@pytest.fixture
+def authed_ws_factory(settings: Settings, engine: Engine, lib: VoiceLibrary) -> WsFactory:
+    """Open WebSockets on an app that requires the API key ``"secret"``."""
+    keyed = settings.model_copy(update={"api_key": "secret"})
+    return _ws_factory(create_app(keyed, engine, lib))
+
+
+@pytest.fixture
+def ws(client_ws_factory: WsFactory) -> Iterator[WebSocketTestSession]:
+    """A connected realtime WebSocket (``session.created`` not yet read)."""
+    with client_ws_factory("") as sock:
+        yield sock
+
+
+@pytest.fixture
+def ws_slow(settings: Settings, lib: VoiceLibrary) -> Iterator[WebSocketTestSession]:
+    """A realtime WebSocket whose FakeModel sleeps 0.1 s per sentence."""
+    from fakes import FakeModel
+    from supertonic_server.engine import Engine, Scheduler
+
+    slow = Engine(FakeModel(delay=0.1), Scheduler(workers=2, max_queue=64))
+    with _ws_factory(create_app(settings, slow, lib))("") as sock:
+        yield sock

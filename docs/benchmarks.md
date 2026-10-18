@@ -44,8 +44,28 @@ is about 13x alone and 27x with 4 sessions.
   8 steps cannot meet the realtime targets on this machine.
 - 4 workers with 3 intra-op threads each avoids oversubscription at 4 sessions.
 - `Settings.realtime_steps` (`SUPERTONIC_REALTIME_STEPS`, default 3) holds the step count for
-  realtime use. The engine does not apply it by itself; realtime routes will pass it for
-  `PRIORITY_REALTIME` calls (planned, Task 9).
+  realtime use. The engine does not apply it by itself; the realtime WebSocket passes it for
+  its `PRIORITY_REALTIME` calls.
 - Audio quality at 3-4 steps has not been evaluated; compare by ear before relying on it.
 - The table above the repeatability section was measured with the earlier harness (warm-up
   time included in the real-time factor; thread counts set explicitly).
+
+## Realtime WebSocket (end to end)
+
+TTFA = time from sending `input_text_buffer.append` (the sentence above plus a space) to
+receiving the first `conversation.item.audio_output.delta` (24 kHz PCM16, base64), through a
+locally started server (`supertonic-server serve`, defaults: 4 workers x 3 threads,
+`realtime_steps=3`). Each socket also sends `commit` and waits for `done` before the next
+round; rounds start in lockstep across sockets. 2 warm-up + 30 measured rounds, 3 runs each.
+
+Reproduce: start the server, then
+`uv run python scripts/bench_latency.py --mode ws --sessions N --rounds 30`
+
+| sessions | p50 per run (ms) | p95 per run (ms) | max per run (ms) |
+|---|---|---|---|
+| 1 | 211 / 211 / 213 | 215 / 215 / 222 | 249 / 217 / 237 |
+| 4 | 405 / 416 / 406 | 438 / 493 / 438 | 474 / 539 / 457 |
+
+Both targets hold (< 300 ms alone, < 600 ms at 4 sessions); the socket, JSON and resampling
+add only a few milliseconds over the engine-only numbers at 3 steps. A `context.cancel` sent
+mid-stream was acknowledged in under 1 ms, with no delta after `context.cancelled`.
