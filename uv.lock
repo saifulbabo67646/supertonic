@@ -1935,7 +1935,7 @@ requires-dist = [
     { name = "fastapi" },
     { name = "httpx" },
     { name = "imageio-ffmpeg" },
-    { name = "mcp" },
+    { name = "mcp", specifier = ">=2,<3" },
     { name = "numpy" },
     { name = "pydantic", specifier = ">=2" },
     { name = "pydantic-settings" },
