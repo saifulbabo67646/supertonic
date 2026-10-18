@@ -17,6 +17,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
 from supertonic_server.audio import finalize_wav
+from supertonic_server.mcp.build_tools import register_build_tools
 from supertonic_server.mcp.client import SupertonicApiError, SupertonicClient
 
 logger = logging.getLogger(__name__)
@@ -76,7 +77,8 @@ def build_server(client: SupertonicClient, output_dir: Path) -> MCPServer:
         "supertonic",
         instructions=(
             "Text-to-speech with Supertonic 3. Call list_voices and list_languages to "
-            "discover options, then speak to generate an audio file saved on this machine."
+            "discover options, then speak to generate an audio file saved on this machine. "
+            "build_voice clones a voice from reference audio (needs the speaker's consent)."
         ),
     )
 
@@ -191,6 +193,7 @@ def build_server(client: SupertonicClient, output_dir: Path) -> MCPServer:
         path = _target(output_dir, name, "wav", None)
         return {"path": _save(path, audio)}
 
+    register_build_tools(server, client)
     return server
 
 

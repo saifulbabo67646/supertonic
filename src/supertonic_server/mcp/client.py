@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
@@ -32,6 +33,11 @@ class Speech:
     audio: bytes
     voice: str
     sample_rate: int | None
+
+
+def _segment(value: str) -> str:
+    """Quote everything (dots too) so an id like ``../x`` cannot reach another endpoint."""
+    return quote(value, safe="").replace(".", "%2E")
 
 
 def _raise_for_error(resp: httpx.Response) -> None:
@@ -115,9 +121,50 @@ class SupertonicClient:
 
     async def preview(self, voice: str, language: str) -> bytes:
         """Return the WAV bytes of ``GET /v1/voices/{id}/preview``."""
-        # Quote everything (dots too) so a voice like "../x" cannot reach another endpoint.
-        segment = quote(voice, safe="").replace(".", "%2E")
         resp = await self._request(
-            "GET", f"/v1/voices/{segment}/preview", params={"language": language}
+            "GET", f"/v1/voices/{_segment(voice)}/preview", params={"language": language}
         )
         return resp.content
+
+    async def build(
+        self,
+        files: list[Path],
+        *,
+        name: str,
+        source_note: str,
+        consent: bool,
+        method: str,
+        description: str = "",
+        tags: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Call ``POST /v1/voices/build`` with the reference files; return the queued job."""
+        form = {
+            "name": name,
+            "description": description,
+            "tags": ",".join(tags or []),
+            "source_note": source_note,
+            "consent": "true" if consent else "false",
+            "method": method,
+        }
+        parts = [("files", (p.name, p.read_bytes(), "application/octet-stream")) for p in files]
+        data: dict[str, Any] = (
+            await self._request("POST", "/v1/voices/build", data=form, files=parts)
+        ).json()
+        return data
+
+    async def job(self, job_id: str) -> dict[str, Any]:
+        """Return ``GET /v1/jobs/{id}``."""
+        data: dict[str, Any] = (await self._request("GET", f"/v1/jobs/{_segment(job_id)}")).json()
+        return data
+
+    async def jobs(self, limit: int) -> list[dict[str, Any]]:
+        """Return ``GET /v1/jobs`` data, newest first."""
+        resp = await self._request("GET", "/v1/jobs", params={"limit": limit})
+        data: list[dict[str, Any]] = resp.json()["data"]
+        return data
+
+    async def finish(self, job_id: str) -> dict[str, Any]:
+        """Call ``POST /v1/jobs/{id}/finish`` (stop optimising, keep the best result)."""
+        resp = await self._request("POST", f"/v1/jobs/{_segment(job_id)}/finish")
+        data: dict[str, Any] = resp.json()
+        return data

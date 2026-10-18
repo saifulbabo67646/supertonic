@@ -162,7 +162,9 @@ pauses until it catches up. Authentication or parameter errors arrive as a
 
 `supertonic-mcp` is a stdio MCP server that talks to a running Supertonic server and saves
 audio files on the machine it runs on. Tools: `list_languages`, `list_voices`, `speak`
-(optionally with word timestamps) and `preview_voice`.
+(optionally with word timestamps) and `preview_voice`, plus voice building:
+`build_voice` (reference audio paths, name, `source_note`, `consent`, `method` `accurate` or
+`fast`), `get_job`, `list_jobs` and `finish_job`.
 
 Claude Code:
 
