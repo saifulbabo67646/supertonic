@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import gc
+import logging
+import threading
 import time
+import weakref
 from pathlib import Path
 from typing import Any
 
@@ -122,9 +126,10 @@ async def test_queue_full_raises_busy() -> None:
 
 async def test_workers_run_in_parallel() -> None:
     sched = Scheduler(workers=2, max_queue=8)
-    t0 = time.perf_counter()
-    await asyncio.gather(*(sched.submit(lambda: time.sleep(0.1), 10) for _ in range(2)))
-    assert time.perf_counter() - t0 < 0.18
+    barrier = threading.Barrier(2, timeout=5)
+    # Each job blocks until the other is running too; serial execution would break the barrier.
+    results = await asyncio.gather(*(sched.submit(barrier.wait, 10) for _ in range(2)))
+    assert sorted(results) == [0, 1]
     sched.close()
 
 
@@ -189,18 +194,22 @@ async def test_closed_scheduler_rejects_and_cancels_waiting() -> None:
         await sched.submit(lambda: None, 10)
 
 
-async def test_abandoned_stream_drops_queued_work() -> None:
+async def test_abandoned_stream_drops_queued_work(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.ERROR)
     model = FakeModel(delay=0.05)
     eng = Engine(model, Scheduler(workers=1, max_queue=64))
     gen = eng.stream("A. B. C. D. E. F.", fake_style(), "en")
     await gen.__anext__()
     await gen.aclose()
     await asyncio.sleep(0.3)
-    assert len(model.calls) <= 3  # first + one lookahead (+ one possibly running)
+    # The first sentence plus its lookahead (already running when the stream closed).
+    assert [c[0][0] for c in model.calls] == ["A.", "B."]
+    assert eng.scheduler.waiting == 0 and eng.scheduler.running == 0
+    assert [r for r in caplog.records if r.levelno >= logging.ERROR] == []
 
 
 async def test_cancelled_stream_consumer_drops_work() -> None:
-    model = FakeModel(delay=0.05)
+    model = FakeModel(delay=0.1)
     eng = Engine(model, Scheduler(workers=1, max_queue=64))
 
     async def consume() -> None:
@@ -208,12 +217,13 @@ async def test_cancelled_stream_consumer_drops_work() -> None:
             pass
 
     task = asyncio.create_task(consume())
-    await asyncio.sleep(0.08)
+    await asyncio.sleep(0.15)  # "A." done, "B." running, "C." queued
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
     await asyncio.sleep(0.2)
-    assert len(model.calls) <= 3
+    assert [c[0][0] for c in model.calls] == ["A.", "B."]
+    assert eng.scheduler.waiting == 0 and eng.scheduler.running == 0
 
 
 async def test_stream_lookahead_is_one_sentence() -> None:
@@ -222,7 +232,20 @@ async def test_stream_lookahead_is_one_sentence() -> None:
     gen = eng.stream("A. B. C. D. E. F.", fake_style(), "en")
     await gen.__anext__()
     await asyncio.sleep(0.1)
-    assert len(model.calls) == 2
+    assert [c[0][0] for c in model.calls] == ["A.", "B."]
+    await gen.aclose()
+
+
+async def test_stream_does_not_retain_consumed_audio() -> None:
+    eng = Engine(FakeModel(), Scheduler(workers=1, max_queue=64))
+    gen = eng.stream("A. B. C. D. E. F.", fake_style(), "en")
+    first = await gen.__anext__()
+    ref = weakref.ref(first.audio)
+    del first
+    await gen.__anext__()
+    await gen.__anext__()
+    gc.collect()
+    assert ref() is None  # the engine kept no reference to audio the consumer dropped
     await gen.aclose()
 
 

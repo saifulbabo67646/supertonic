@@ -101,21 +101,24 @@ class Engine:
         """
         _validate(speed, steps)
         sentences = self.prepare(text, lang)
-        tasks: list[asyncio.Task[np.ndarray]] = []
 
-        def start(i: int) -> None:
-            if i < len(sentences):
-                job = self.synth(sentences[i], style, lang, speed, steps, priority)
-                tasks.append(asyncio.ensure_future(job))
+        def start(i: int) -> asyncio.Task[np.ndarray] | None:
+            if i >= len(sentences):
+                return None
+            job = self.synth(sentences[i], style, lang, speed, steps, priority)
+            return asyncio.ensure_future(job)
 
+        # Only the sentence being awaited and its lookahead are referenced, so finished audio
+        # is released as soon as the consumer drops it (bounded memory for long inputs).
+        current: asyncio.Task[np.ndarray] | None = None
+        lookahead = start(0)
         try:
-            start(0)
             for i, sentence in enumerate(sentences):
-                current = tasks[i]
-                start(i + 1)
+                current, lookahead = lookahead, start(i + 1)
+                assert current is not None
                 yield Chunk(sentence, await current)
         finally:
-            await _cancel_all(tasks)
+            await _cancel_all([t for t in (current, lookahead) if t is not None])
 
     async def render(
         self,
