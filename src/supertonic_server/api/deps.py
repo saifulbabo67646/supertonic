@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from fastapi import Request
 
@@ -15,6 +15,7 @@ from supertonic_server.engine import PRIORITY_DEFAULT
 from supertonic_server.text import get_language
 
 if TYPE_CHECKING:
+    from supertonic_server.builder import Builder
     from supertonic_server.core.config import Settings
     from supertonic_server.engine import Engine
     from supertonic_server.voices import VoiceLibrary
@@ -30,6 +31,8 @@ class AppState:
     settings: Settings
     engine: Engine
     library: VoiceLibrary
+    builder: Builder | None = None
+    builder_detail: dict[str, Any] | None = None
     preview_locks: dict[tuple[str, str], asyncio.Lock] = field(default_factory=dict)
 
 

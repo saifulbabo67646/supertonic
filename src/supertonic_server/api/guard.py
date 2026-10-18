@@ -10,9 +10,9 @@ are refused without the server reading (let alone parsing) their bodies.
   (``CF-Connecting-IP``, ``X-Forwarded-For``, ``Forwarded``, ``X-Real-IP``) came through a
   proxy or tunnel and is refused with 403 ``forwarded_without_key``.
 - **Body cap.** HTTP bodies are limited to :data:`MAX_BODY_BYTES` (voice imports to
-  :data:`MAX_IMPORT_BODY_BYTES`); the limit is enforced while the body streams in, so a
-  missing or false ``Content-Length`` does not help. Oversized bodies get 413
-  ``payload_too_large``.
+  :data:`MAX_IMPORT_BODY_BYTES`, voice builds to :data:`MAX_BUILD_BODY_BYTES`); the limit is
+  enforced while the body streams in, so a missing or false ``Content-Length`` does not
+  help. Oversized bodies get 413 ``payload_too_large``.
 
 A refused WebSocket is not closed here: the guard stores the error under
 :data:`WS_REJECTION` in the scope and the realtime handler accepts the socket, sends a
@@ -29,6 +29,7 @@ from starlette._utils import get_route_path
 from starlette.datastructures import Headers, QueryParams
 from starlette.responses import JSONResponse
 
+from supertonic_server.builder.audio_prep import MAX_UPLOAD_BYTES
 from supertonic_server.core.errors import ApiError, error_body
 
 if TYPE_CHECKING:
@@ -39,6 +40,9 @@ MAX_BODY_BYTES = 1024 * 1024
 
 MAX_IMPORT_BODY_BYTES = 2 * 1024 * 1024 + 64 * 1024
 """Largest body of ``POST /v1/voices/import``: a 2 MB style plus multipart framing."""
+
+MAX_BUILD_BODY_BYTES = MAX_UPLOAD_BYTES + 256 * 1024
+"""Largest body of ``POST /v1/voices/build``: the reference audio plus multipart framing."""
 
 WS_REJECTION = "supertonic.rejection"
 """Scope key under which the guard leaves an :class:`ApiError` for the WebSocket handler."""
@@ -163,8 +167,12 @@ def _protected(scope: Scope) -> bool:
 
 
 def _body_limit(scope: Scope) -> int:
-    if scope["method"] == "POST" and get_route_path(scope) == "/v1/voices/import":
-        return MAX_IMPORT_BODY_BYTES
+    if scope["method"] == "POST":
+        path = get_route_path(scope)
+        if path == "/v1/voices/import":
+            return MAX_IMPORT_BODY_BYTES
+        if path == "/v1/voices/build":
+            return MAX_BUILD_BODY_BYTES
     return MAX_BODY_BYTES
 
 

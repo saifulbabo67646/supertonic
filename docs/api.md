@@ -14,7 +14,7 @@ The key is checked before the body is read, so a bad or missing key is always
 
 | limit | value | error |
 |---|---|---|
-| request body | 1 MB; `POST /v1/voices/import` 2 MB + 64 KB | `413 payload_too_large` (counted while the body streams in) |
+| request body | 1 MB; `POST /v1/voices/import` 2 MB + 64 KB; `POST /v1/voices/build` 25 MB + 256 KB | `413 payload_too_large` (counted while the body streams in) |
 | streamed speech (`pcm`, `wav`) | 100 000 characters | `400 input_too_long` |
 | whole-file speech (`mp3`, `opus`, `aac`, `flac`) and `/v1/tts/timestamps` | 20 000 characters | `400 input_too_long` (stream longer text as `pcm`/`wav`) |
 | voice name | 100 characters (ids at most 64) | `400 invalid_request`, `param: "name"` |
@@ -34,8 +34,12 @@ substitutes another voice.
 
 ```bash
 curl -s http://127.0.0.1:8787/v1/health
-# {"status":"ok","model":"supertonic-3","voices":10,"builder":"none","auth":false,"version":"0.1.0"}
+# {"status":"ok","model":"supertonic-3","voices":10,"builder":"none","builder_detail":null,"auth":false,"version":"0.1.0"}
 ```
+
+`builder` is `"local"` when this machine can build voices and `"none"` otherwise. For a
+local builder `builder_detail` is `{"device":"NVIDIA GeForce RTX 4050","vram_mb":6144,"methods":["accurate","fast"]}`;
+otherwise `null`.
 
 ## Models
 
@@ -149,6 +153,59 @@ curl -s -X PATCH http://127.0.0.1:8787/v1/voices/my-f1-copy \
   -H 'Content-Type: application/json' -d '{"name":"Narrator","tags":["demo","narration"]}'
 curl -s -X DELETE http://127.0.0.1:8787/v1/voices/my-f1-copy      # 204
 ```
+
+## Building voices
+
+Clone a voice from 1 to 3 reference recordings. Building needs a builder: a CUDA machine
+with the `builder` extra installed (`GET /v1/health` shows `"builder":"local"`). Without one
+every endpoint below answers `503 builder_unavailable` with a hint to set
+`SUPERTONIC_BUILDER_URL` or install the builder extra on a CUDA machine. Built voices are
+ordinary custom voices with an extra `build` object (`method`, `loss`, `similarity`,
+`steps`, `preset_start`, `duration_status`, `seconds`, `stopped_early`, `builder`). They
+derive from the Supertonic model, so the OpenRAIL-M terms apply to them too.
+
+`POST /v1/voices/build` takes `multipart/form-data`:
+
+| field | |
+|---|---|
+| `files` | 1 to 3 audio files (any common format), at most 25 MB in total; 3 to 60 s of speech after trimming |
+| `name` | required, at most 100 characters |
+| `description`, `tags` | optional; `tags` is comma-separated |
+| `source_note` | required: where the recording comes from |
+| `consent` | required, the string `true`: you have the right to clone this voice |
+| `method` | `accurate` (default, slow) or `fast` |
+
+```bash
+curl -s -X POST http://127.0.0.1:8787/v1/voices/build \
+  -F files=@take1.wav -F files=@take2.mp3 -F name="Narrator" \
+  -F source_note="my own recording" -F consent=true -F method=fast
+# 202 {"id":"3f2c...","state":"queued","request":{...},"progress":null,"voice_id":null,"error":null,"builder":"local",...}
+```
+
+The job `state` is `queued`, `running`, `succeeded`, `failed` or `cancelled`; on success
+`voice_id` names the new voice, on failure `error` has a `code` and `message`. One build
+runs at a time; up to 8 more wait in the queue.
+
+```bash
+curl -s 'http://127.0.0.1:8787/v1/jobs?limit=20'              # {"data":[job, ...]}, newest first
+curl -s http://127.0.0.1:8787/v1/jobs/3f2c...                 # one job, with progress
+curl -s -X DELETE http://127.0.0.1:8787/v1/jobs/3f2c...       # cancel (a finished job is returned as is)
+curl -s -X POST http://127.0.0.1:8787/v1/jobs/3f2c.../finish  # stop optimising, save the best so far
+```
+
+`finish` makes a running job succeed early with `build.stopped_early: true`.
+
+| status | code | meaning |
+|---|---|---|
+| 400 | `invalid_request` | bad `name`, `method` or file count (`param` says which) |
+| 400 | `consent_required` | `source_note` blank or `consent` not `true` |
+| 400 | `invalid_reference_audio` | audio unreadable, too short/long or mostly silent (the message says why) |
+| 400 | `method_unavailable` | this builder cannot run the method |
+| 404 | `job_not_found` | unknown job id |
+| 409 | `job_not_running` | `finish` on a job that has not started |
+| 413 | `payload_too_large` | upload over the limit |
+| 503 | `builder_unavailable` | no builder, or it is shutting down |
+| 503 | `builder_busy` | the queue is full |
 
 ## Realtime WebSocket
 

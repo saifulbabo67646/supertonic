@@ -3,6 +3,7 @@
 from supertonic_server.builder.audio_prep import PreparedAudio, prepare_reference
 from supertonic_server.builder.models import (
     BUILD_METHODS,
+    Builder,
     BuildMethod,
     BuildRequest,
     Job,
@@ -13,6 +14,7 @@ from supertonic_server.builder.models import (
 __all__ = [
     "BUILD_METHODS",
     "BuildMethod",
+    "Builder",
     "BuildRequest",
     "Job",
     "JobState",

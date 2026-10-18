@@ -11,21 +11,28 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from supertonic_server.api.builder_boot import detail_for, start_builder
 from supertonic_server.api.deps import AppState
 from supertonic_server.api.errors import install_error_handlers
 from supertonic_server.api.guard import Guard
 from supertonic_server.api.routes import ROUTERS
+from supertonic_server.builder import Builder
 from supertonic_server.core.config import Settings, check_startup
 from supertonic_server.engine import Engine, load_engine
 from supertonic_server.voices import VoiceLibrary
 
 
 def create_app(
-    settings: Settings, engine: Engine | None = None, library: VoiceLibrary | None = None
+    settings: Settings,
+    engine: Engine | None = None,
+    library: VoiceLibrary | None = None,
+    builder: Builder | None = None,
 ) -> FastAPI:
     """Build the app. Raises ``ConfigError`` on unsafe configuration.
 
-    When ``engine``/``library`` are omitted they are loaded during startup.
+    When ``engine``/``library`` are omitted they are loaded during startup, and the voice
+    builder is chosen from the settings. An injected ``builder`` (tests) is used as is: it is
+    neither probed nor started or closed here, and health reports only its methods.
     """
     if (engine is None) != (library is None):
         raise ValueError("pass both engine and library, or neither")
@@ -37,17 +44,23 @@ def create_app(
         if engine is None or library is None:
             eng, presets = load_engine(settings)
             lib = VoiceLibrary(presets, settings.custom_voices_dir)
-            app.state.app_state = AppState(settings, eng, lib)
+            state = AppState(settings, eng, lib)
+            state.builder, state.builder_detail = await start_builder(settings, lib, presets.parent)
+            app.state.app_state = state
             loaded = True
         try:
             yield
         finally:
             if loaded:
+                started = app.state.app_state.builder
+                if started is not None:
+                    await started.close()
                 app.state.app_state.engine.scheduler.close()
 
     app = FastAPI(title="Supertonic Server", lifespan=lifespan)
     if engine is not None and library is not None:
-        app.state.app_state = AppState(settings, engine, library)
+        detail = detail_for(builder) if builder is not None else None
+        app.state.app_state = AppState(settings, engine, library, builder, detail)
     install_error_handlers(app)
     # Auth, the forwarded-header check and the body cap run before routing and parsing.
     app.add_middleware(Guard, api_key=settings.api_key)

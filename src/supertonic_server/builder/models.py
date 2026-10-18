@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import builtins
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
-from typing import Any, Literal, get_args
+from typing import Any, Literal, Protocol, get_args
 
 from supertonic_server.core.errors import ApiError
 
@@ -104,3 +106,42 @@ class Job:
             builder=data["builder"],
             stopping=bool(data.get("stopping", False)),
         )
+
+
+class Builder(Protocol):
+    """What the API needs from a voice builder (a local ``JobManager`` or a remote forwarder)."""
+
+    @property
+    def methods(self) -> tuple[BuildMethod, ...]:
+        """Build methods this builder can run."""
+        ...
+
+    async def start(self) -> None:
+        """Get ready to accept builds."""
+        ...
+
+    async def close(self) -> None:
+        """Stop accepting builds and release resources."""
+        ...
+
+    async def submit(
+        self, req: BuildRequest, files: Sequence[tuple[str, bytes]], builder_label: str = "local"
+    ) -> Job:
+        """Validate and queue a build."""
+        ...
+
+    def get(self, job_id: str) -> Job:
+        """Return a job or raise 404 ``job_not_found``."""
+        ...
+
+    def list(self, limit: int = 50) -> builtins.list[Job]:
+        """Most recent jobs first."""
+        ...
+
+    async def cancel(self, job_id: str) -> Job:
+        """Cancel a queued or running job."""
+        ...
+
+    async def finish(self, job_id: str) -> Job:
+        """Ask a running job to save its best result now."""
+        ...

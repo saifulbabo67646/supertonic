@@ -20,7 +20,8 @@ async def health(state: State) -> dict[str, Any]:
         "status": "ok",
         "model": "supertonic-3",
         "voices": len(state.library.list()),
-        "builder": "none" if not state.settings.builder_url else "configured",
+        "builder": "none" if state.builder is None else "local",
+        "builder_detail": state.builder_detail,
         "auth": bool(state.settings.api_key),
         "version": supertonic_server.__version__,
     }

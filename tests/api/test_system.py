@@ -37,6 +37,7 @@ async def test_health_open(client: httpx.AsyncClient) -> None:
         "model": "supertonic-3",
         "voices": 2,
         "builder": "none",
+        "builder_detail": None,
         "auth": False,
         "version": __version__,
     }
