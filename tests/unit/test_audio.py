@@ -90,3 +90,39 @@ def test_encode_ffmpeg_failure(monkeypatch: pytest.MonkeyPatch) -> None:
         encode(np.zeros(10, np.float32), 24000, "opus")
     assert e.value.status == 500 and e.value.code == "encode_failed"
     assert e.value.type == "server_error" and "nope" in e.value.message
+
+
+def _read_wav(data: bytes) -> tuple[int, int]:
+    import io
+    import wave
+
+    with wave.open(io.BytesIO(data)) as w:
+        return w.getnframes(), w.getframerate()
+
+
+def test_finalize_streaming_wav() -> None:
+    from supertonic_server.audio import finalize_wav
+
+    pcm = to_pcm16(np.zeros(1234, dtype=np.float32))
+    fixed = finalize_wav(wav_header(24000, None) + pcm)
+    assert _read_wav(fixed) == (1234, 24000)
+    assert struct.unpack_from("<I", fixed, 4)[0] == len(fixed) - 8
+    assert fixed == wav_header(24000, len(pcm)) + pcm
+
+
+def test_finalize_wav_with_extra_chunk() -> None:
+    from supertonic_server.audio import finalize_wav
+
+    pcm = to_pcm16(np.zeros(100, dtype=np.float32))
+    header = wav_header(16000, None)
+    extra = b"LIST" + struct.pack("<I", 5) + b"abcde" + b"\x00"  # odd size: padded
+    data = header[:36] + extra + header[36:] + pcm
+    assert _read_wav(finalize_wav(data)) == (100, 16000)
+
+
+@pytest.mark.parametrize("data", [b"", b"RIFF\x00\x00\x00\x00WAVE", b"OggS" + b"\x00" * 40])
+def test_finalize_wav_rejects_non_wav(data: bytes) -> None:
+    from supertonic_server.audio import finalize_wav
+
+    with pytest.raises(ValueError):
+        finalize_wav(data)

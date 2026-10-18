@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import base64
+import io
 import logging
 import os
 import secrets
+import wave
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -14,6 +16,7 @@ import httpx
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
+from supertonic_server.audio import finalize_wav
 from supertonic_server.mcp.client import SupertonicApiError, SupertonicClient
 
 logger = logging.getLogger(__name__)
@@ -46,6 +49,20 @@ def _save(path: Path, data: bytes) -> str:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(data)
     return str(path)
+
+
+def _finished_wav(data: bytes, sample_rate: int | None) -> tuple[bytes, int]:
+    """Fix the streamed WAV's size fields; return the file and its duration in ms.
+
+    The duration comes from the fixed header (frame count) and ``X-Sample-Rate``.
+    """
+    try:
+        fixed = finalize_wav(data)
+        with wave.open(io.BytesIO(fixed)) as w:
+            frames, rate = w.getnframes(), sample_rate or w.getframerate()
+    except (ValueError, EOFError, wave.Error) as exc:
+        raise ToolError(f"The server returned an unreadable WAV file: {exc}") from exc
+    return fixed, round(frames / rate * 1000)
 
 
 def build_server(client: SupertonicClient, output_dir: Path) -> MCPServer:
@@ -146,12 +163,14 @@ def build_server(client: SupertonicClient, output_dir: Path) -> MCPServer:
             speech = await client.speech(text, voice, language, speed, format)
         except SupertonicApiError as exc:
             raise _fail(exc) from exc
+        audio = speech.audio
         duration: int | None = None
-        if format in ("wav", "pcm"):
-            rate = speech.sample_rate or (PCM_DEFAULT_RATE if format == "pcm" else 44100)
-            body = len(speech.audio) - (44 if format == "wav" else 0)
-            duration = round(max(body, 0) / 2 / rate * 1000)
-        saved = _save(_target(output_dir, speech.voice, format, output_path), speech.audio)
+        if format == "wav":
+            audio, duration = _finished_wav(audio, speech.sample_rate)
+        elif format == "pcm":
+            rate = speech.sample_rate or PCM_DEFAULT_RATE
+            duration = round(len(audio) / 2 / rate * 1000)
+        saved = _save(_target(output_dir, speech.voice, format, output_path), audio)
         return {"path": saved, "duration_ms": duration, "voice": speech.voice, "language": language}
 
     @server.tool()

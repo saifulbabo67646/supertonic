@@ -61,6 +61,19 @@ async def test_speak_writes_file(mcp: MCPServer, tmp_path: Path) -> None:
     assert out["duration_ms"] > 0
 
 
+async def test_speak_wav_is_a_valid_file(mcp: MCPServer) -> None:
+    """The streamed WAV's unknown-length header is fixed before saving (I8)."""
+    import wave
+
+    out = await call(mcp, "speak", text="Hello there. Bye.", voice="F1", format="wav")
+    with wave.open(out["path"]) as w:
+        frames, rate = w.getnframes(), w.getframerate()
+    total = size(out["path"])
+    assert rate == 44100 and frames == (total - 44) // 2
+    assert int.from_bytes(head(out["path"], 8)[4:], "little") == total - 8
+    assert out["duration_ms"] == round(frames / rate * 1000)
+
+
 async def test_speak_pcm_duration_and_ext(mcp: MCPServer) -> None:
     out = await call(mcp, "speak", text="Hello.", voice="F1", format="pcm")
     p = Path(out["path"])
