@@ -159,3 +159,20 @@ async def test_client_error_fallback_for_non_json(client: httpx.AsyncClient) -> 
     with pytest.raises(SupertonicApiError) as exc:
         await c.languages()
     assert exc.value.status == 502 and exc.value.code == "http_error"
+
+
+@pytest.mark.parametrize("voice", ["../voices", "a/b", "x?y#z", "my voice"])
+async def test_client_quotes_voice_in_preview_path(voice: str) -> None:
+    seen: list[httpx.URL] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url)
+        return httpx.Response(200, content=b"RIFF")
+
+    c = SupertonicClient(
+        httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="http://x")
+    )
+    assert await c.preview(voice, "en") == b"RIFF"
+    path = seen[0].raw_path.decode().split("?")[0]
+    assert path.startswith("/v1/voices/") and path.endswith("/preview")
+    assert path.count("/") == 4 and seen[0].params["language"] == "en"

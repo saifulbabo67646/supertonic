@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -114,7 +115,9 @@ class SupertonicClient:
 
     async def preview(self, voice: str, language: str) -> bytes:
         """Return the WAV bytes of ``GET /v1/voices/{id}/preview``."""
+        # Quote everything (dots too) so a voice like "../x" cannot reach another endpoint.
+        segment = quote(voice, safe="").replace(".", "%2E")
         resp = await self._request(
-            "GET", f"/v1/voices/{voice}/preview", params={"language": language}
+            "GET", f"/v1/voices/{segment}/preview", params={"language": language}
         )
         return resp.content
