@@ -2,18 +2,23 @@
 
 Each context (see :mod:`.context`) owns a sentence buffer, an ordered queue of sentences
 and one consumer task, so audio of a context is always in order while different
-contexts synthesise concurrently. Every outgoing event goes through one writer task, so
-frames never interleave and cancelling a context can also discard its unsent audio.
+contexts synthesise concurrently (at most :data:`MAX_ACTIVE_CONTEXTS` at a time per
+socket). Every outgoing event goes through one :class:`~.outbox.Outbox`, so frames never
+interleave, cancelling a context can also discard its unsent audio, and a client that stops
+reading pauses synthesis. Text not yet synthesised is capped at :data:`MAX_PENDING_CHARS`.
+
+Authentication: send ``Authorization: Bearer <key>`` when the client can set headers. The
+``?api_key=`` query parameter exists for browsers, whose WebSocket API cannot set headers;
+query strings tend to end up in proxy and access logs, so prefer the header.
 """
 
 from __future__ import annotations
 
 import asyncio
 import base64
-import json
 import logging
 import uuid
-from collections import deque
+from functools import partial
 from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, WebSocket
@@ -21,10 +26,12 @@ from starlette.websockets import WebSocketDisconnect
 
 from supertonic_server.api.realtime import protocol as p
 from supertonic_server.api.realtime.context import Context, Entry
+from supertonic_server.api.realtime.outbox import Outbox
 from supertonic_server.api.realtime.params import ConnectParams, Voicing, check_key, parse_params
 from supertonic_server.audio import resample, to_pcm16
 from supertonic_server.core.errors import ApiError
 from supertonic_server.engine import PRIORITY_REALTIME
+from supertonic_server.engine.engine import MAX_INPUT_CHARS
 
 if TYPE_CHECKING:
     from supertonic_server.api.deps import AppState
@@ -36,9 +43,14 @@ router = APIRouter()
 MAX_CONTEXTS = 32
 """Contexts one socket may open; more is almost certainly a client bug."""
 
+MAX_ACTIVE_CONTEXTS = 4
+"""Contexts of one socket that may synthesise at the same time; others wait their turn."""
+
+MAX_PENDING_CHARS = MAX_INPUT_CHARS
+"""Buffered plus queued (not yet synthesised) characters allowed per socket."""
+
 _POLICY_VIOLATION = 1008
 _TRY_AGAIN_LATER = 1013
-_AUDIO_EVENTS = {"conversation.item.audio_output.delta", "conversation.item.audio_output.done"}
 
 
 def _new_id(prefix: str) -> str:
@@ -56,8 +68,9 @@ class Session:
         self.sample_rate = params.sample_rate
         self.max_partial = params.max_partial_length
         self.contexts: dict[str, Context] = {}
-        self._out: deque[dict[str, Any]] = deque()
-        self._wake = asyncio.Event()
+        self.outbox = Outbox()
+        self._slots = asyncio.Semaphore(MAX_ACTIVE_CONTEXTS)
+        self._closing = False
 
     def info(self, voicing: Voicing) -> dict[str, Any]:
         """The ``session`` object describing ``voicing``."""
@@ -66,12 +79,11 @@ class Session:
 
     def emit(self, event: dict[str, Any]) -> None:
         """Queue ``event`` for the writer; events are sent whole, in emit order."""
-        self._out.append(event)
-        self._wake.set()
+        self.outbox.put(event)
 
     async def run(self) -> None:
         """Serve the socket until the client disconnects, then stop all work."""
-        writer = asyncio.create_task(self._write())
+        writer = asyncio.create_task(self.outbox.run(self.ws.send_text))
         self.emit(p.session_created(self.info(self.defaults)))
         try:
             while True:
@@ -88,22 +100,11 @@ class Session:
         except WebSocketDisconnect:
             pass
         finally:
+            self._closing = True
             tasks = [c.task for c in self.contexts.values() if c.task is not None]
             for task in (*tasks, writer):
                 task.cancel()
             await asyncio.gather(*tasks, writer, return_exceptions=True)
-
-    async def _write(self) -> None:
-        while True:
-            while not self._out:
-                self._wake.clear()
-                await self._wake.wait()
-            event = self._out.popleft()
-            try:
-                await self.ws.send_text(json.dumps(event))
-            except (WebSocketDisconnect, RuntimeError, OSError) as exc:
-                logger.debug("realtime socket closed while sending: %r", exc)
-                return
 
     async def _handle(self, event: p.ClientEvent) -> None:
         ctx_id = event.context_id
@@ -148,6 +149,15 @@ class Session:
         self.emit(p.session_updated(self.info(voicing), event.context_id))
 
     def _append(self, ctx: Context, text: str) -> None:
+        pending = sum(c.pending_chars for c in self.contexts.values())
+        if pending + len(text) > MAX_PENDING_CHARS:
+            raise ApiError(
+                400,
+                "input_too_long",
+                f"At most {MAX_PENDING_CHARS} characters may wait for synthesis per "
+                f"connection; {pending} are pending and this append adds {len(text)}",
+                param="text",
+            )
         if ctx.item_id is None:
             ctx.item_id = _new_id("item")
         self.emit(p.text_received(ctx.id, ctx.item_id, text))
@@ -164,61 +174,92 @@ class Session:
         ctx = self.contexts.get(context_id)
         if ctx is not None:
             await ctx.reset()
-        self._out = deque(
-            e
-            for e in self._out
-            if not (e["type"] in _AUDIO_EVENTS and e.get("context_id") == context_id)
-        )
+        self.outbox.discard_audio(context_id)
         self.emit(p.context_cancelled(context_id))
 
     def _enqueue(self, ctx: Context, sentences: list[str]) -> None:
-        """Sanitise and queue sentences; ones with nothing speakable are skipped."""
+        """Sanitise and queue sentences; ones with nothing speakable are skipped.
+
+        Any other preparation error fails the current item, like a synthesis error.
+        """
         if not sentences:
             return
         if ctx.item_id is None:
             ctx.item_id = _new_id("item")
+        item_id = ctx.item_id
         engine = self.state.engine
         for sentence in sentences:
             try:
                 pieces = engine.prepare(sentence, ctx.voicing.language)
             except ApiError as exc:
-                if exc.code != "empty_input":
-                    raise
-                continue
+                if exc.code == "empty_input":
+                    continue
+                self._fail(ctx, item_id, exc)
+                return
             for piece in pieces:
-                self._put(ctx, Entry(ctx.item_id, piece, ctx.voicing))
+                self._put(ctx, Entry(item_id, piece, ctx.voicing))
 
     def _put(self, ctx: Context, entry: Entry) -> None:
         ctx.queue.put_nowait(entry)
+        if entry.text is not None:
+            ctx.queued_chars += len(entry.text)
         if ctx.task is None:
-            ctx.task = asyncio.create_task(self._consume(ctx, ctx.queue))
+            self._start_consumer(ctx)
+
+    def _start_consumer(self, ctx: Context) -> None:
+        task = asyncio.create_task(self._consume(ctx, ctx.queue))
+        task.add_done_callback(partial(self._consumer_done, ctx))
+        ctx.task = task
+
+    def _consumer_done(self, ctx: Context, task: asyncio.Task[None]) -> None:
+        """Replace a consumer that died unexpectedly so the context keeps working."""
+        if task.cancelled():
+            return
+        if ctx.task is task:
+            ctx.task = None
+        exc = task.exception()
+        if exc is None:
+            return
+        logger.error("realtime consumer of context %r crashed", ctx.id, exc_info=exc)
+        err = ApiError(500, "internal_error", "Synthesis failed", type_="server_error")
+        self.emit(p.tts_failed(err, ctx.id))
+        if not self._closing and ctx.task is None and not ctx.queue.empty():
+            self._start_consumer(ctx)
 
     async def _consume(self, ctx: Context, queue: asyncio.Queue[Entry]) -> None:
-        engine = self.state.engine
-        steps = self.state.settings.realtime_steps
         while True:
             entry = await queue.get()
+            if entry.text is not None:
+                ctx.queued_chars -= len(entry.text)
             if entry.item_id == ctx.failed_item:
                 continue
             if entry.text is None:
                 self.emit(p.audio_done(ctx.id, entry.item_id))
                 continue
-            v = entry.voicing
+            await self.outbox.wait_for_room()
             try:
-                audio = await engine.synth(
-                    entry.text, v.style, v.language, v.speed, steps, PRIORITY_REALTIME
-                )
+                async with self._slots:
+                    delta = await self._synth(entry)
             except ApiError as exc:
                 self._fail(ctx, entry.item_id, exc)
-                continue
             except Exception:
                 logger.exception("realtime synthesis failed")
                 err = ApiError(500, "internal_error", "Synthesis failed", type_="server_error")
                 self._fail(ctx, entry.item_id, err)
-                continue
-            pcm = to_pcm16(resample(audio, engine.sample_rate, self.sample_rate))
-            delta = base64.b64encode(pcm).decode("ascii")
-            self.emit(p.audio_delta(ctx.id, entry.item_id, delta))
+            else:
+                self.emit(p.audio_delta(ctx.id, entry.item_id, delta))
+
+    async def _synth(self, entry: Entry) -> str:
+        """Synthesise one sentence; return base64 PCM16 at the session's sample rate."""
+        assert entry.text is not None
+        engine = self.state.engine
+        v = entry.voicing
+        steps = self.state.settings.realtime_steps
+        audio = await engine.synth(
+            entry.text, v.style, v.language, v.speed, steps, PRIORITY_REALTIME
+        )
+        pcm = to_pcm16(resample(audio, engine.sample_rate, self.sample_rate))
+        return base64.b64encode(pcm).decode("ascii")
 
     def _fail(self, ctx: Context, item_id: str, exc: ApiError) -> None:
         """Report a failed item; its remaining sentences, buffer and ``done`` are dropped."""

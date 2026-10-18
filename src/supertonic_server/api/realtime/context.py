@@ -33,6 +33,13 @@ class Context:
         self.item_id: str | None = None
         self.failed_item: str | None = None
         self.task: asyncio.Task[None] | None = None
+        self.queued_chars = 0
+        """Characters of queued sentences not yet taken by the consumer."""
+
+    @property
+    def pending_chars(self) -> int:
+        """Buffered plus queued characters that have not been synthesised yet."""
+        return len(self.buffer) + self.queued_chars
 
     def set_voicing(self, voicing: Voicing) -> list[str]:
         """Switch settings; buffered text moves to a buffer for the new language.
@@ -57,3 +64,4 @@ class Context:
         self.queue = asyncio.Queue()
         self.item_id = None
         self.failed_item = None
+        self.queued_chars = 0

@@ -131,3 +131,7 @@ class SentenceBuffer:
     def clear(self) -> None:
         """Discard any buffered text."""
         self._buf = ""
+
+    def __len__(self) -> int:
+        """Number of buffered characters not yet emitted."""
+        return len(self._buf)

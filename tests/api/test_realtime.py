@@ -2,16 +2,26 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
+import json
 import logging
+import threading
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
 import pytest
+from starlette.datastructures import QueryParams
 from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from conftest import WS_PATH, recv_json, recv_until
-from supertonic_server.api import create_app
+from fakes import FakeModel
+from supertonic_server.api import AppState, create_app
+from supertonic_server.api.realtime import outbox, protocol
+from supertonic_server.api.realtime.params import parse_params
+from supertonic_server.api.realtime.session import Session
+from supertonic_server.core.errors import ApiError
 from supertonic_server.engine import Engine, Scheduler
 
 if TYPE_CHECKING:
@@ -288,3 +298,178 @@ def test_disconnect_mid_stream_is_quiet(
     # Leaving the block waits for the handler to finish; queued sentences never ran.
     assert len(slow.model.calls) <= 2  # type: ignore[attr-defined]
     assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+
+
+class _StalledSocket:
+    """Fake WebSocket whose client never reads until ``reading`` is set."""
+
+    def __init__(self) -> None:
+        self.incoming: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        self.reading = asyncio.Event()
+        self.sent: list[dict[str, Any]] = []
+
+    async def receive(self) -> dict[str, Any]:
+        return await self.incoming.get()
+
+    async def send_text(self, text: str) -> None:
+        await self.reading.wait()
+        self.sent.append(json.loads(text))
+
+    def client_sends(self, event: dict[str, Any]) -> None:
+        self.incoming.put_nowait({"type": "websocket.receive", "text": json.dumps(event)})
+
+
+async def test_slow_reader_pauses_synthesis(
+    settings: Settings, engine: Engine, lib: VoiceLibrary, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(outbox, "HIGH_WATER_BYTES", 10_000)  # one delta exceeds it
+    state = AppState(settings, engine, lib)
+    sock = _StalledSocket()
+    params = parse_params(QueryParams(""), state)
+    run = asyncio.create_task(Session(sock, state, params).run())  # type: ignore[arg-type]
+    text = " ".join(f"Sentence number {i}." for i in range(20))
+    sock.client_sends({"type": "input_text_buffer.append", "text": text})
+    sock.client_sends({"type": "input_text_buffer.commit"})
+    await asyncio.sleep(0.3)
+    calls = engine.model.calls  # type: ignore[attr-defined]
+    assert 1 <= len(calls) <= 2  # paused while the client does not read
+    sock.reading.set()
+    for _ in range(100):
+        if any(m["type"] == DONE for m in sock.sent):
+            break
+        await asyncio.sleep(0.05)
+    assert len(calls) == 20 and len(_deltas(sock.sent)) == 20
+    sock.incoming.put_nowait({"type": "websocket.disconnect", "code": 1000})
+    await run
+
+
+def test_pending_text_capped(ws_slow: WebSocketTestSession) -> None:
+    recv_json(ws_slow)
+    ws_slow.send_json({"type": "input_text_buffer.append", "text": "x" * 100_001})
+    m = recv_json(ws_slow)
+    assert m["type"] == FAILED and m["error"]["code"] == "input_too_long"
+    words = "word " * 12_000  # 60 000 chars, emitted as partials into the slow queue
+    ws_slow.send_json({"type": "input_text_buffer.append", "text": words, "context_id": "a"})
+    assert recv_json(ws_slow)["type"] == "conversation.item.input_text.received"
+    ws_slow.send_json({"type": "input_text_buffer.append", "text": words, "context_id": "b"})
+    m = recv_until(ws_slow, FAILED)[-1]
+    assert m["error"]["code"] == "input_too_long" and m["context_id"] == "b"
+    ws_slow.send_json({"type": "context.cancel", "context_id": "a"})
+    recv_until(ws_slow, "context.cancelled")
+    ws_slow.send_json({"type": "input_text_buffer.append", "text": "Hi.", "context_id": "b"})
+    ws_slow.send_json({"type": "input_text_buffer.commit", "context_id": "b"})
+    assert len(_deltas(recv_until(ws_slow, DONE))) == 1  # usable again, nothing queued earlier
+
+
+class _CountingModel(FakeModel):
+    """Records the peak number of concurrent model calls."""
+
+    def __init__(self) -> None:
+        super().__init__(delay=0.1)
+        self.active = self.peak = 0
+        self._count = threading.Lock()
+
+    def __call__(self, *args: Any, **kwargs: Any) -> tuple[np.ndarray, np.ndarray]:
+        with self._count:
+            self.active += 1
+            self.peak = max(self.peak, self.active)
+        try:
+            return super().__call__(*args, **kwargs)
+        finally:
+            with self._count:
+                self.active -= 1
+
+
+def test_at_most_four_contexts_synthesise_at_once(settings: Settings, lib: VoiceLibrary) -> None:
+    model = _CountingModel()
+    wide = Engine(model, Scheduler(workers=8, max_queue=64))
+    with TestClient(create_app(settings, wide, lib)).websocket_connect(WS_PATH) as ws:
+        recv_json(ws)
+        for i in range(6):
+            ctx = f"c{i}"
+            ws.send_json(
+                {"type": "input_text_buffer.append", "text": "One. Two.", "context_id": ctx}
+            )
+            ws.send_json({"type": "input_text_buffer.commit", "context_id": ctx})
+        msgs: list[dict[str, Any]] = []
+        while sum(m["type"] == DONE for m in msgs) < 6:
+            msgs.append(recv_json(ws))
+    assert model.peak == 4 and len(model.calls) == 12
+    for i in range(6):
+        mine = [m["type"] for m in msgs if m.get("context_id") == f"c{i}"]
+        assert mine[-3:] == [DELTA, DELTA, DONE]
+
+
+class _BadFirstOutput(FakeModel):
+    """The first call returns audio with an impossible shape (fails in resampling)."""
+
+    def __call__(self, *args: Any, **kwargs: Any) -> tuple[np.ndarray, np.ndarray]:
+        wav, dur = super().__call__(*args, **kwargs)
+        if len(self.calls) == 1:
+            wav = np.zeros((1, wav.shape[1], 2, 2), dtype=np.float32)
+        return wav, dur
+
+
+def test_postprocessing_error_fails_item_only(settings: Settings, lib: VoiceLibrary) -> None:
+    bad = Engine(_BadFirstOutput(), Scheduler(workers=1, max_queue=64))
+    with TestClient(create_app(settings, bad, lib)).websocket_connect(WS_PATH) as ws:
+        recv_json(ws)
+        ws.send_json({"type": "input_text_buffer.append", "text": "Broken. Lost."})
+        ws.send_json({"type": "input_text_buffer.commit"})
+        msgs = recv_until(ws, FAILED)
+        assert msgs[-1]["error"]["code"] == "internal_error" and msgs[-1]["item_id"]
+        ws.send_json({"type": "input_text_buffer.append", "text": "Works."})
+        ws.send_json({"type": "input_text_buffer.commit"})
+        msgs = recv_until(ws, DONE)
+    assert [m["type"] for m in msgs] == ["conversation.item.input_text.received", DELTA, DONE]
+
+
+def test_crashed_consumer_is_replaced(
+    ws: WebSocketTestSession, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    real_done = protocol.audio_done
+    calls = 0
+
+    def flaky_done(context_id: str, item_id: str) -> dict[str, Any]:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("boom")
+        return real_done(context_id, item_id)
+
+    monkeypatch.setattr(protocol, "audio_done", flaky_done)
+    recv_json(ws)
+    ws.send_json({"type": "input_text_buffer.append", "text": "First."})
+    ws.send_json({"type": "input_text_buffer.commit"})
+    assert recv_until(ws, FAILED)[-1]["error"]["code"] == "internal_error"
+    ws.send_json({"type": "input_text_buffer.append", "text": "Second."})
+    ws.send_json({"type": "input_text_buffer.commit"})
+    assert len(_deltas(recv_until(ws, DONE))) == 1
+    assert any("crashed" in r.message and r.levelno == logging.ERROR for r in caplog.records)
+
+
+def test_prepare_error_fails_item_once(
+    ws: WebSocketTestSession, engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real_prepare = engine.prepare
+
+    def prepare(text: str, lang: str) -> list[str]:
+        if text.startswith("Bad"):
+            raise ApiError(400, "input_too_long", "too long", param="input")
+        return real_prepare(text, lang)
+
+    monkeypatch.setattr(engine, "prepare", prepare)
+    recv_json(ws)
+    ws.send_json({"type": "input_text_buffer.append", "text": "Good. Bad one. Bad two. "})
+    msgs = recv_until(ws, FAILED)
+    item = msgs[0]["item_id"]
+    assert msgs[-1]["error"]["code"] == "input_too_long" and msgs[-1]["item_id"] == item
+    ws.send_json({"type": "input_text_buffer.commit"})  # failed item: no done
+    ws.send_json({"type": "input_text_buffer.append", "text": "Fresh."})
+    ws.send_json({"type": "input_text_buffer.commit"})
+    rest = recv_until(ws, DONE)
+    assert not any(m["type"] == FAILED for m in rest)  # reported once
+    assert all(m.get("item_id") != item for m in rest)
+    assert _deltas(msgs) + _deltas(rest) and all(  # "Good." may or may not have been sent
+        m["item_id"] in (item, rest[-1]["item_id"]) for m in _deltas(msgs) + _deltas(rest)
+    )
