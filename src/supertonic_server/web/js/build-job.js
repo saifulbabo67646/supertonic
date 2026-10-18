@@ -195,7 +195,11 @@ export function createJobView(onChange) {
       title.focus();
     }
     if (job.state === "failed") status.set(job.error?.message || "The build failed.", "error");
-    else if (job.state === "cancelled") status.set("This build was cancelled.", "info");
+    else if (job.state === "cancelled") {
+      // A forwarded build cancelled while its builder was unreachable says so in `error`.
+      const note = job.error?.message ? ` ${job.error.message}` : "";
+      status.set(`This build was cancelled.${note}`, job.error ? "error" : "info");
+    }
     else if (!active) status.clear();
     if (job.state === "succeeded" && resultFor !== job.id) showResult(job);
     clearInterval(ticker);

@@ -219,7 +219,9 @@ every 3 s, and on success imports the voice into its own library (`voice_id`; th
 copy is `remote_voice_id`) with `build.builder` set to `remote:<host:port>` and `build.remote_job_id` naming the
 builder's job (an import is never repeated for the same job). If the builder
 cannot be reached for 2 minutes the job fails with `builder_lost` and nothing is imported.
-`cancel` and `finish` are passed on to the builder. After a restart the forwarding server
+`cancel` and `finish` are passed on to the builder. A cancel while the builder cannot be
+reached still cancels the local job, with `error.code` `builder_unreachable` ("Could not
+reach the builder; the build may still be running there."). After a restart the forwarding server
 resumes following jobs that were still queued or running.
 
 | status | code | meaning |
@@ -253,6 +255,7 @@ the builder's code unchanged.
 | `bad_arguments` | the worker was started with wrong arguments (a bug or a version mismatch) |
 | `import_failed` | the voice was built but could not be saved into the library |
 | `builder_lost` | forwarded job: the builder could not be reached for 2 minutes, or forgot the job |
+| `builder_unreachable` | on a `cancelled` forwarded job: the builder could not be told, so the build may still be running there |
 | `internal_error` | an unexpected error in the server itself |
 
 ## Realtime WebSocket

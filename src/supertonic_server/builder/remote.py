@@ -35,6 +35,11 @@ from supertonic_server.voices import VoiceLibrary
 logger = logging.getLogger(__name__)
 
 PRUNE_AFTER = timedelta(days=7)
+UNREACHABLE_CANCEL = {
+    "code": "builder_unreachable",
+    "message": "Could not reach the builder; the build may still be running there.",
+}
+"""The ``error`` of a mirror job cancelled while its builder could not be told."""
 
 
 class RemoteBuilder(RemotePolling):
@@ -166,8 +171,10 @@ class RemoteBuilder(RemotePolling):
     async def cancel(self, job_id: str) -> Job:
         """Cancel the remote job, then mark the mirror ``cancelled``; finished jobs are unchanged.
 
-        An unreachable remote still cancels locally (nothing will be imported). A job whose
-        remote finished first, or whose result is being imported, settles as usual.
+        An unreachable remote still cancels locally (nothing will be imported), with
+        :data:`UNREACHABLE_CANCEL` as the job's ``error``: the build may still hold the
+        builder's GPU. A job whose remote finished first, or whose result is being imported,
+        settles as usual.
         """
         job = self.get(job_id)
         if job.state in TERMINAL or job.remote_id is None:
@@ -181,11 +188,14 @@ class RemoteBuilder(RemotePolling):
             await asyncio.gather(poller, return_exceptions=True)
         if job.state in TERMINAL:
             return job
+        unconfirmed: dict[str, Any] | None = None
         try:
             remote = Job.from_dict(await self._client.cancel(job.remote_id))
         except POLL_ERRORS as exc:
             logger.warning("job %s: could not cancel it on %s: %s", job.id, self.host, exc)
             remote = None
+            if isinstance(exc, Unreachable):  # it may still hold the GPU over there
+                unconfirmed = dict(UNREACHABLE_CANCEL)
         if job.state in TERMINAL:  # settled while the DELETE was in flight
             return job
         if remote is not None and remote.state in ("succeeded", "failed"):
@@ -193,7 +203,7 @@ class RemoteBuilder(RemotePolling):
             return job
         if job_id in self._pollers:  # a concurrent cancel restarted the poller
             return job
-        self._settle(job, "cancelled", None)
+        self._settle(job, "cancelled", unconfirmed)
         return job
 
     async def finish(self, job_id: str) -> Job:

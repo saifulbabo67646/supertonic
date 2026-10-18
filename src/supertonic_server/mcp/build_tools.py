@@ -104,7 +104,8 @@ def register_build_tools(server: MCPServer, client: SupertonicClient) -> None:
         Returns ``{state, progress, voice_id, error}``. ``state`` is ``queued``, ``running``,
         ``succeeded``, ``failed`` or ``cancelled``; ``progress`` is ``{stage, step, total,
         loss, message, at}`` or null; ``voice_id`` is set once the job succeeded; ``error`` is
-        ``{code, message}`` when it failed.
+        ``{code, message}`` when it failed, or when a forwarded build was cancelled while its
+        builder could not be reached (``builder_unreachable``: it may still be running there).
         """
         try:
             return _job_view(await client.job(job_id))

@@ -335,6 +335,29 @@ async def test_cancel_propagates(
     assert (await rb.cancel(job.id)).state == "cancelled"
 
 
+async def test_cancel_while_builder_unreachable_says_so(
+    make_remote: RemoteFactory,
+    make_builder: BuilderFactory,
+    lib: VoiceLibrary,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FAKE_BUILDER_MODES", "gate")
+    remote = await make_remote()
+    rb = await make_builder(remote)
+    job = await rb.submit(_req(), FILES)
+    await _running(rb, job.id)
+    remote.switch.down = True
+    cancelled = await rb.cancel(job.id)
+    assert cancelled.state == "cancelled" and _custom(lib) == []
+    assert cancelled.error == {
+        "code": "builder_unreachable",
+        "message": "Could not reach the builder; the build may still be running there.",
+    }
+    assert remote.manager.get(job.remote_id or "").state == "running"
+    reloaded = json.loads((rb._root / job.id / "job.json").read_text(encoding="utf-8"))
+    assert reloaded["error"]["code"] == "builder_unreachable"
+
+
 async def test_finish_propagates(
     make_remote: RemoteFactory,
     make_builder: BuilderFactory,
