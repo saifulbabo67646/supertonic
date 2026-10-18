@@ -12,9 +12,9 @@ from fastapi import Depends, FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from supertonic_server.api.deps import AppState, require_key
+from supertonic_server.api.errors import install_error_handlers
 from supertonic_server.api.routes import PUBLIC_ROUTERS, ROUTERS
 from supertonic_server.core.config import Settings, check_startup
-from supertonic_server.core.errors import install_error_handlers
 from supertonic_server.engine import Engine, load_engine
 from supertonic_server.voices import VoiceLibrary
 
