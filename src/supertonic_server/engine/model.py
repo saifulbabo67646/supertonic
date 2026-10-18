@@ -58,7 +58,7 @@ def load_engine(settings: Settings) -> tuple[Engine, Path]:
         model="supertonic-3",
         model_dir=settings.model_dir,
         auto_download=True,
-        intra_op_num_threads=settings.intra_op_threads,
+        intra_op_num_threads=settings.effective_intra_op_threads(),
     )
     workers = settings.effective_workers()
     logger.info("loaded supertonic-3 from %s (%d workers)", tts.model_dir, workers)

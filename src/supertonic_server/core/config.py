@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 from pathlib import Path
 
@@ -28,15 +29,21 @@ class Settings(BaseSettings):
     workers: int = 0
     intra_op_threads: int | None = None
     max_queue: int = 64
-    realtime_steps: int = 4
+    realtime_steps: int = 3
     default_voice: str = "F1"
     builder_url: str | None = None
 
     def effective_workers(self) -> int:
-        """Return the worker count; ``workers == 0`` means ``max(2, cpu_count // 2)``."""
+        """Return the worker count; ``workers == 0`` means ``min(4, max(1, cpu_count // 2))``."""
         if self.workers > 0:
             return self.workers
-        return max(2, (os.cpu_count() or 1) // 2)
+        return min(4, max(1, (os.cpu_count() or 1) // 2))
+
+    def effective_intra_op_threads(self) -> int:
+        """Return threads per worker; unset means ``ceil(cpu_count / effective_workers())``."""
+        if self.intra_op_threads is not None and self.intra_op_threads > 0:
+            return self.intra_op_threads
+        return math.ceil((os.cpu_count() or 1) / self.effective_workers())
 
     @property
     def custom_voices_dir(self) -> Path:

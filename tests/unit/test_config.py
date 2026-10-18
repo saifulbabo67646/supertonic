@@ -27,7 +27,12 @@ def test_exposed_with_key_ok() -> None:
 
 def test_workers_default(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(os, "cpu_count", lambda: 10)
-    assert Settings(workers=0).effective_workers() == 5
+    assert Settings(workers=0).effective_workers() == 4
+    monkeypatch.setattr(os, "cpu_count", lambda: 4)
+    assert Settings(workers=0).effective_workers() == 2
+    monkeypatch.setattr(os, "cpu_count", lambda: 1)
+    assert Settings(workers=0).effective_workers() == 1
+    monkeypatch.setattr(os, "cpu_count", lambda: 10)
     assert Settings(workers=3).effective_workers() == 3
 
 
@@ -40,4 +45,16 @@ def test_env_prefix_and_voices_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Pa
 
 
 def test_realtime_steps_default() -> None:
-    assert Settings().realtime_steps == 4
+    assert Settings().realtime_steps == 3
+
+
+def test_intra_op_threads_default_and_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(os, "cpu_count", lambda: 10)
+    assert Settings().effective_intra_op_threads() == 3
+    assert Settings(workers=2).effective_intra_op_threads() == 5
+    assert Settings(intra_op_threads=2).effective_intra_op_threads() == 2
+
+
+def test_realtime_steps_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SUPERTONIC_REALTIME_STEPS", "5")
+    assert Settings().realtime_steps == 5

@@ -1,7 +1,10 @@
 """Measure time-to-first-audio (TTFA) for N concurrent realtime sessions.
 
 Engine mode loads the model in-process; each session repeatedly synthesises one first
-sentence at realtime priority. WebSocket mode is completed in Task 9.
+sentence at realtime priority. TTFA is approximated by the ``Engine.synth`` latency of that
+single sentence (the whole sentence, not a streamed first packet). Sessions fire in lockstep,
+which is the worst case for queueing. Real-time factor covers measured rounds only.
+WebSocket mode is completed in Task 9.
 """
 
 from __future__ import annotations
@@ -26,19 +29,17 @@ def percentile(values: list[float], q: float) -> float:
 
 
 async def run_session(
-    engine: Engine, library: VoiceLibrary, args: argparse.Namespace
+    engine: Engine, library: VoiceLibrary, args: argparse.Namespace, rounds: int
 ) -> tuple[list[float], float]:
-    """Run one session; return its TTFAs in ms and the audio seconds it produced."""
+    """Run ``rounds`` rounds; return each round's TTFA in ms and the audio seconds produced."""
     style = library.style(args.voice)
     ttfa: list[float] = []
     audio_s = 0.0
-    for i in range(args.warmup + args.rounds):
+    for _ in range(rounds):
         start = time.perf_counter()
         audio = await engine.synth(SENTENCE, style, "en", 1.05, args.steps, PRIORITY_REALTIME)
-        elapsed = (time.perf_counter() - start) * 1000
-        if i >= args.warmup:
-            ttfa.append(elapsed)
-            audio_s += len(audio) / engine.sample_rate
+        ttfa.append((time.perf_counter() - start) * 1000)
+        audio_s += len(audio) / engine.sample_rate
     return ttfa, audio_s
 
 
@@ -48,12 +49,16 @@ async def bench_engine(args: argparse.Namespace) -> int:
     engine, presets = load_engine(settings)
     library = VoiceLibrary(presets, settings.custom_voices_dir)
     print(
-        f"workers={settings.effective_workers()} intra_op_threads={args.threads} "
+        f"workers={settings.effective_workers()} "
+        f"intra_op_threads={settings.effective_intra_op_threads()} "
         f"steps={args.steps} sessions={args.sessions} rounds={args.rounds}"
+    )
+    await asyncio.gather(
+        *(run_session(engine, library, args, args.warmup) for _ in range(args.sessions))
     )
     start = time.perf_counter()
     results = await asyncio.gather(
-        *(run_session(engine, library, args) for _ in range(args.sessions))
+        *(run_session(engine, library, args, args.rounds) for _ in range(args.sessions))
     )
     wall = time.perf_counter() - start
     samples = [t for ttfa, _ in results for t in ttfa]
@@ -62,7 +67,7 @@ async def bench_engine(args: argparse.Namespace) -> int:
         f"ttfa_ms p50={statistics.median(samples):.0f} p95={percentile(samples, 0.95):.0f} "
         f"max={max(samples):.0f}"
     )
-    print(f"real_time_factor={audio_s / wall:.1f}x (audio s / wall s, incl. warm-up wall time)")
+    print(f"real_time_factor={audio_s / wall:.1f}x (audio s / wall s, measured rounds)")
     return 0
 
 
