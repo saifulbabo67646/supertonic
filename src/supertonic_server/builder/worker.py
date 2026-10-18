@@ -24,7 +24,7 @@ import json
 import logging
 import os
 import sys
-from contextlib import redirect_stdout
+from contextlib import redirect_stdout, suppress
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any, NoReturn, Protocol, TextIO
@@ -214,7 +214,11 @@ def _setup_io() -> None:
     for stream, errors in ((sys.stdout, "strict"), (sys.stderr, "backslashreplace")):
         reconfigure = getattr(stream, "reconfigure", None)
         if reconfigure is not None:
-            reconfigure(encoding="utf-8", errors=errors)
+            # On Windows, when fd 1 has been pointed at a console stderr (worker run by
+            # hand with stdout piped), reconfiguring sys.stdout raises EINVAL; the old
+            # encoding is harmless there because nothing protocol-related uses it.
+            with suppress(OSError):
+                reconfigure(encoding="utf-8", errors=errors)
     if not logging.getLogger().handlers:
         logging.basicConfig(
             stream=sys.stderr, level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"

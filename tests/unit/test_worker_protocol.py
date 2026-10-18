@@ -331,3 +331,23 @@ def test_dispatcher_rejects_unknown_method(tmp_path: Path) -> None:
             on_progress=lambda p: None,
             should_stop=lambda: False,
         )
+
+
+def test_setup_io_tolerates_a_stream_that_cannot_be_reconfigured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Windows: after fd 1 is pointed at a console stderr, sys.stdout.reconfigure raises
+    # OSError(22); the self-test run by hand from a console must still print its probe.
+    calls: list[str] = []
+
+    def broken(**kwargs: Any) -> None:
+        calls.append("stdout")
+        raise OSError(22, "Invalid argument")
+
+    def ok(**kwargs: Any) -> None:
+        calls.append("stderr")
+
+    monkeypatch.setattr(sys, "stdout", SimpleNamespace(reconfigure=broken))
+    monkeypatch.setattr(sys, "stderr", SimpleNamespace(reconfigure=ok, write=lambda s: None))
+    worker_mod._setup_io()
+    assert calls == ["stdout", "stderr"]
