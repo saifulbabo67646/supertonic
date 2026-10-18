@@ -25,6 +25,24 @@ All notable changes to this project are documented here. The format is based on
 - Latency benchmark script and results (`docs/benchmarks.md`).
 - README, API reference, integration notes, third-party notices and launch scripts for
   macOS/Linux and Windows.
+- Voice building from 1 to 3 reference recordings on an NVIDIA GPU, in a separate worker
+  process (the server never imports PyTorch; install with `uv sync --extra builder`). Two
+  methods: `accurate` (default; speaker-similarity optimisation after
+  supertonic3-voice-clone, about 100 min on a laptop GPU) and `fast` (supertonic.embed's
+  WavLM inversion, about 10 to 15 min). Built voices are custom voices with a `build` report,
+  the `source_note` and consent.
+- `POST /v1/voices/build`, `GET /v1/jobs`, `GET /v1/jobs/{id}`, `DELETE /v1/jobs/{id}`
+  (cancel) and `POST /v1/jobs/{id}/finish` (Finish now); one build at a time, 8 waiting,
+  persistent jobs, a 150-minute timeout (`SUPERTONIC_BUILDER_TIMEOUT_MIN`).
+- Forwarding: `SUPERTONIC_BUILDER_URL` / `SUPERTONIC_BUILDER_API_KEY` send builds from a
+  machine without a GPU to a builder and import the finished voice locally.
+- MCP tools `build_voice`, `get_job`, `list_jobs` and `finish_job`.
+- New voice screen in the web UI: upload or record, method choice, progress, Cancel,
+  Finish now and Try it.
+- `scripts/setup-builder.ps1` (Windows) and `scripts/setup-builder.sh` (Linux) set up a
+  builder: install, CUDA self-test, model downloads
+  (`python -m supertonic_server.builder.extract.prefetch`) and the `.env` lines to use.
+- Builder guide (`docs/builder.md`) and builder measurements (`docs/benchmarks-builder.md`).
 
 ### Changed
 
@@ -53,3 +71,5 @@ All notable changes to this project are documented here. The format is based on
   and voice ids come from folder names.
 - Truncated speech streams are logged as warnings and closed promptly on disconnect.
 - `api_key=` values are redacted from the access log.
+- The builder worker's `--self-test` no longer crashes with `OSError: [Errno 22]` when run
+  by hand from a Windows console with its output piped.

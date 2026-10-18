@@ -11,7 +11,8 @@ small web UI. Runs on CPU (ONNX Runtime) on macOS and Windows (Linux should work
 - **Realtime WebSocket** for streaming LLM text in and audio out, with barge-in (`context.cancel`) and several independent contexts per connection.
 - **Word timestamps** (`POST /v1/tts/timestamps`), clearly labelled as estimated.
 - **Voice library**: 10 built-in voices, import/export/rename/delete custom styles.
-- **MCP server** (`supertonic-mcp`) so Claude Code and other agents can speak and audition voices.
+- **Voice building**: clone a voice from 10 to 30 s of speech on an NVIDIA GPU (Windows or Linux), or forward builds from a Mac to such a machine; the result is an ordinary voice that runs on CPU everywhere.
+- **MCP server** (`supertonic-mcp`) so Claude Code and other agents can speak, audition and build voices.
 - **Web UI** at `/` for speaking, browsing voices and copying connection snippets.
 - **Safe by default**: binds to loopback, refuses to start on a public interface without an API key, and refuses proxied or tunnelled requests while no key is set.
 - **Low latency**: about 210 ms to first audio, 410 ms with four concurrent sessions (Apple M4).
@@ -62,7 +63,10 @@ working directory; copy [`.env.example`](.env.example) to start.
 | `SUPERTONIC_MAX_QUEUE` | `64` | Waiting synthesis jobs before the server answers 503 (at least 1). Realtime work has its own allowance of the same size, so REST traffic cannot crowd it out. |
 | `SUPERTONIC_REALTIME_STEPS` | `3` | Denoising steps (1 to 100) for realtime WebSocket sentences and for `pcm` speech requests that do not set `total_steps`. Other REST requests use `total_steps` (default 8). |
 | `SUPERTONIC_DEFAULT_VOICE` | `F1` | Voice for realtime connections that name none. |
-| `SUPERTONIC_BUILDER_URL` | unset | Voice builder service (reserved for Plan 2). |
+| `SUPERTONIC_BUILDER` | `auto` | Voice building: `auto` builds here when this machine has a CUDA GPU and the builder extra, `local` also logs why it cannot, `off` disables it. `SUPERTONIC_BUILDER_URL` takes precedence. |
+| `SUPERTONIC_BUILDER_URL` | unset | Another Supertonic server that builds voices for this one (see [docs/builder.md](docs/builder.md)). |
+| `SUPERTONIC_BUILDER_API_KEY` | unset | That server's API key. |
+| `SUPERTONIC_BUILDER_TIMEOUT_MIN` | `150` | Minutes one build may run before it fails with `timeout` (at least 1). |
 
 `supertonic-server serve` also accepts `--host` and `--port`. The MCP process reads
 `SUPERTONIC_BASE_URL` (default `http://127.0.0.1:8787`), `SUPERTONIC_API_KEY` and
@@ -100,6 +104,37 @@ flac) are rendered as whole files and limited to 20 000 characters.
 
 More patterns (live agents with barge-in, narration with timestamps) are in
 [docs/integrations.md](docs/integrations.md).
+
+## Building voices
+
+A voice is a small file of numbers that steers the frozen Supertonic model. The builder
+finds new numbers that make the model sound like a reference recording: it synthesises,
+lets a speaker-recognition model score the similarity to the reference, nudges the numbers
+and repeats. That needs an NVIDIA GPU; the finished voice runs on CPU like the built-in
+ones and speaks all 31 languages.
+
+| Method | Time (RTX 4050 Laptop, 6 GB) | Result |
+|---|---|---|
+| `accurate` (default) | about 100 min, or less with **Finish now** | close likeness |
+| `fast` | about 10 to 15 min | rough likeness |
+
+On the GPU machine (Windows or Linux):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\setup-builder.ps1   # Windows
+```
+
+```bash
+scripts/setup-builder.sh                                            # Linux
+```
+
+The script installs the `builder` extra (`uv sync --extra builder`), checks CUDA, downloads
+the models and prints the `.env` lines for the builder and for machines that forward to
+it. A Mac sets `SUPERTONIC_BUILDER_URL` (over a trusted LAN or an SSH tunnel) and builds
+from its own web UI, REST API or MCP tools; the voice lands in its library. Every build
+needs a note on where the audio comes from and the speaker's consent. The full guide, with
+troubleshooting, is [docs/builder.md](docs/builder.md); measurements are in
+[docs/benchmarks-builder.md](docs/benchmarks-builder.md).
 
 ## API reference
 
@@ -229,12 +264,6 @@ Methodology, worker/thread/steps tuning and reproduction commands:
 [docs/benchmarks.md](docs/benchmarks.md). Realtime uses 3 denoising steps by default for
 this reason; audio quality at few steps has not been evaluated, so listen before relying on it.
 
-## Roadmap
-
-Plan 2 adds voice building from reference audio (an optimisation of the style vectors,
-following supertonic.embed) on a machine with a CUDA GPU, with the result imported into the
-library of any server through `SUPERTONIC_BUILDER_URL`.
-
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) and the [code of conduct](CODE_OF_CONDUCT.md).
@@ -252,7 +281,9 @@ GPL-built ffmpeg that is used for mp3, opus, aac and flac.
 ## Acknowledgements
 
 - [Supertone](https://github.com/supertone-inc) for Supertonic 3 and the `supertonic` package.
-- [supertonic.embed](https://github.com/kdrkdrkdr/supertonic.embed), whose approach to
-  optimising voice styles Plan 2 builds on.
-- [supertonic3-voice-clone](https://github.com/saurabhv749/supertonic3-voice-clone), work on
-  voice-cloning workflows for Supertonic 3.
+- [supertonic.embed](https://github.com/kdrkdrkdr/supertonic.embed) by Gyeongmin Kim, whose
+  style inversion is the `fast` build method (MIT, vendored and adapted).
+- [supertonic3-voice-clone](https://github.com/saurabhv749/supertonic3-voice-clone) by Saurabh
+  Verma, whose speaker-similarity optimisation is the `accurate` build method (MIT, vendored
+  and adapted).
+- [SpeechBrain](https://speechbrain.github.io/) for the ECAPA-TDNN speaker model (Apache-2.0).
