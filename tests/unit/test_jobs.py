@@ -697,3 +697,34 @@ async def test_spawn_failure_names_no_local_paths(
     assert done.error is not None and done.error["code"] == "worker_failed"
     assert str(tmp_path) not in done.error["message"]
     assert real not in done.error["message"]
+
+
+async def test_finish_when_stop_file_cannot_be_written(
+    make_manager: ManagerFactory,
+    modes: Callable[..., None],
+    control: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    modes("gate")
+    mgr = await make_manager()
+    job = await mgr.submit(_req(), FILES)
+    await _until(lambda: (control / "run-0.json").exists())
+    await _until(lambda: mgr.get(job.id).state == "running")
+
+    def refuse(self: Path, *args: Any, **kwargs: Any) -> None:
+        raise PermissionError(13, "Permission denied", str(self))
+
+    with monkeypatch.context() as m:
+        m.setattr(Path, "touch", refuse)
+        with pytest.raises(ApiError) as exc:
+            await mgr.finish(job.id)
+    assert (exc.value.status, exc.value.code, exc.value.type) == (
+        500,
+        "internal_error",
+        "server_error",
+    )
+    assert "could not ask the build to finish" in exc.value.message.lower()
+    assert str(Path.home()) not in exc.value.message
+    assert mgr.get(job.id).stopping is False
+    assert (await mgr.finish(job.id)).stopping is True  # a later press still works
+    assert (await _settled(mgr, job.id)).state == "succeeded"

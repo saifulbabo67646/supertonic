@@ -211,16 +211,24 @@ class JobManager:
         returned unchanged.
 
         Raises:
-            ApiError: 409 ``job_not_running`` for a queued job.
+            ApiError: 409 ``job_not_running`` for a queued job; 500 ``internal_error`` when
+                the stop file cannot be written (the job keeps running and may be asked again).
         """
         job = self.get(job_id)
         if job.state == "queued":
             raise errors.job_not_running(job_id)
         run = self._current
         if run is not None and run.job is job and not run.exited and not job.stopping:
-            (self._root / job_id / "STOP").touch()
+            try:
+                (self._root / job_id / "STOP").touch()
+            except OSError as exc:
+                logger.exception("job %s: could not write the stop file", job_id)
+                raise errors.finish_failed(scrub_paths(str(exc))) from None
             job.stopping = True
-            self._persist(job)
+            try:
+                self._persist(job)
+            except OSError:  # the worker stops anyway; the in-memory job is authoritative
+                logger.exception("job %s: could not save its stopping flag", job_id)
         return job
 
     # -- internals ---------------------------------------------------------------------

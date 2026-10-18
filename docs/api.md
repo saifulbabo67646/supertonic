@@ -231,6 +231,7 @@ resumes following jobs that were still queued or running.
 | 404 | `job_not_found` | unknown job id |
 | 409 | `job_not_running` | `finish` on a job that has not started |
 | 413 | `payload_too_large` | upload over the limit |
+| 500 | `internal_error` | `finish` could not write the job's stop file (the job keeps running; try again) |
 | 502 | `builder_error` | the remote builder answered with something that is not an API error (for example a proxy page) |
 | 503 | `builder_unavailable` | no builder, it is shutting down, or the remote builder is unreachable |
 | 503 | `builder_busy` | the queue is full |

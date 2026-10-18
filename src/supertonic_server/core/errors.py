@@ -62,6 +62,13 @@ def job_not_running(job_id: str) -> ApiError:
     return ApiError(409, "job_not_running", f"Job '{job_id}' has not started yet")
 
 
+def finish_failed(reason: str) -> ApiError:
+    """500: the stop file could not be written (``reason`` must hold no local paths)."""
+    return ApiError(
+        500, "internal_error", f"Could not ask the build to finish: {reason}", type_="server_error"
+    )
+
+
 def method_unavailable(method: str, available: tuple[str, ...]) -> ApiError:
     """400: the builder cannot run this build method."""
     names = ", ".join(available) or "none"
