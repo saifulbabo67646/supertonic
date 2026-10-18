@@ -25,3 +25,31 @@ All notable changes to this project are documented here. The format is based on
 - Latency benchmark script and results (`docs/benchmarks.md`).
 - README, API reference, integration notes, third-party notices and launch scripts for
   macOS/Linux and Windows.
+
+### Changed
+
+- Authentication, a request-body cap (1 MB; voice import 2 MB + 64 KB; `413
+  payload_too_large`) and a tunnel check now run in one ASGI guard before routing, so the
+  key is verified before any body is read. The OpenAPI pages need the key when one is set.
+- Without an API key, requests carrying `CF-Connecting-IP`, `X-Forwarded-For`, `Forwarded`
+  or `X-Real-IP` are refused with `403 forwarded_without_key`.
+- Whole-file renders (mp3, opus, aac, flac speech and `/v1/tts/timestamps`) are limited to
+  20 000 characters; stream longer text as `pcm`/`wav`.
+- `pcm` speech runs at realtime priority and uses `SUPERTONIC_REALTIME_STEPS` unless
+  `total_steps` is given; realtime work has its own queue allowance.
+- Settings are range-checked, `~` is expanded in paths and a blank API key means none.
+- Voice names are limited to 100 characters, ids to 64; Windows device names get a suffix.
+- `/v1/tts/timestamps` rejects an unknown `response_format` as `400 invalid_request`.
+
+### Fixed
+
+- Realtime sockets no longer fail with `too_many_contexts` after 32 one-turn contexts; only
+  live contexts count.
+- Ragged or deeply nested style data is rejected on import instead of breaking the voice.
+- Sentence splitting is linear on long runs of punctuation (no event-loop stalls).
+- Encoding, resampling, timestamp estimation and preview writes run off the event loop.
+- MCP `speak` saves WAV files with correct sizes.
+- Leftover voice folders no longer block imports, previews never recreate a deleted voice,
+  and voice ids come from folder names.
+- Truncated speech streams are logged as warnings and closed promptly on disconnect.
+- `api_key=` values are redacted from the access log.

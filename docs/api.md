@@ -1,8 +1,25 @@
 # API reference
 
 Base URL: `http://127.0.0.1:8787` (the examples below use that). When `SUPERTONIC_API_KEY`
-is set, every endpoint except `GET /v1/health` and the web UI needs
-`Authorization: Bearer <key>`; add `-H "Authorization: Bearer $KEY"` to the curl calls.
+is set, every `/v1/*` endpoint except `GET /v1/health`, and the OpenAPI pages `/docs`,
+`/redoc` and `/openapi.json`, need `Authorization: Bearer <key>`; add
+`-H "Authorization: Bearer $KEY"` to the curl calls. The web UI (`/`) is public. A browser
+cannot send that header to `/docs`, so with a key set fetch `/openapi.json` with curl or
+browse the docs on a keyless local server.
+
+The key is checked before the body is read, so a bad or missing key is always
+`401 invalid_api_key`, even for a malformed body.
+
+## Limits and guard errors
+
+| limit | value | error |
+|---|---|---|
+| request body | 1 MB; `POST /v1/voices/import` 2 MB + 64 KB | `413 payload_too_large` (counted while the body streams in) |
+| streamed speech (`pcm`, `wav`) | 100 000 characters | `400 input_too_long` |
+| whole-file speech (`mp3`, `opus`, `aac`, `flac`) and `/v1/tts/timestamps` | 20 000 characters | `400 input_too_long` (stream longer text as `pcm`/`wav`) |
+| voice name | 100 characters (ids at most 64) | `400 invalid_request`, `param: "name"` |
+| proxy header without a key | requests with `CF-Connecting-IP`, `X-Forwarded-For`, `Forwarded` or `X-Real-IP` while `SUPERTONIC_API_KEY` is unset | `403 forwarded_without_key` |
+| queue | `SUPERTONIC_MAX_QUEUE` waiting jobs (realtime work has its own allowance of the same size) | `503 server_busy` |
 
 Errors always look like OpenAI's:
 
@@ -42,19 +59,24 @@ curl -s http://127.0.0.1:8787/v1/languages
 
 | field | default | notes |
 |---|---|---|
-| `input` | required | text, up to 100 000 characters |
+| `input` | required | text, up to 100 000 characters for `pcm`/`wav`, 20 000 for other formats |
 | `voice` | required | voice id or name, see `/v1/voices` |
 | `model` | `supertonic-3` | accepted for compatibility, ignored |
 | `response_format` | `mp3` | `mp3`, `opus`, `aac`, `flac`, `wav`, `pcm` |
 | `speed` | `1.05` | 0.7 to 2.0 |
 | `language` | `en` | language code |
-| `total_steps` | `8` | denoising steps 1 to 100; fewer is faster and lower quality |
+| `total_steps` | `8` (`pcm`: `SUPERTONIC_REALTIME_STEPS`, 3) | denoising steps 1 to 100; fewer is faster and lower quality |
 | `sample_rate` | 44100 (`pcm`: 24000) | one of 16000, 22050, 24000, 44100 |
 | `instructions` | | accepted for compatibility, ignored |
 
 `pcm` is raw 16-bit little-endian mono; `wav` and `pcm` stream sentence by sentence
 (chunked transfer, WAV header with unknown length). Other formats return the whole file.
 Responses carry `X-Sample-Rate` and `X-Voice-Id` headers.
+
+`pcm` is treated as the live-agent path: it runs at realtime priority (ahead of other REST
+work) and, unless the request sets `total_steps`, uses `SUPERTONIC_REALTIME_STEPS`. If
+synthesis fails after the first bytes of a stream were sent, the response simply ends early
+(the server logs a warning).
 
 ```bash
 curl -s http://127.0.0.1:8787/v1/audio/speech \
@@ -71,7 +93,9 @@ ffplay -f s16le -ar 24000 -ac 1 speech.pcm
 ## Speech with word timestamps
 
 `POST /v1/tts/timestamps` takes `text`, `voice`, `language`, `speed`, `total_steps` and
-`response_format` (`wav` default, or `mp3`). It returns base64 audio plus timings.
+`response_format` (`wav` default, or `mp3`; anything else is `400 invalid_request` with
+`param: "response_format"`). `text` is limited to 20 000 characters. It returns base64 audio
+plus timings.
 **Timings are estimated** from sentence durations and word length, not forced-aligned
 (`timing_source` says so). Japanese is timed per character (`timing_unit: "character"`).
 
@@ -93,7 +117,10 @@ curl -s http://127.0.0.1:8787/v1/tts/timestamps \
 ## Voices
 
 Ten built-in presets (`F1` to `F5`, `M1` to `M5`) plus custom voices you import. Ids of
-custom voices are derived from their name (`my-voice`, `my-voice-2` on collision).
+custom voices are derived from their name (`my-voice`, `my-voice-2` on collision), are at
+most 64 characters, and never use a Windows device name (`con`, `nul`, `com1`, ...: these get
+a `-voice` suffix). Names are at most 100 characters. Each custom voice lives in
+`SUPERTONIC_DATA_DIR/voices/<id>/`; the folder name is the id.
 
 ```bash
 curl -s 'http://127.0.0.1:8787/v1/voices?kind=preset'     # filters: kind=preset|custom, tag=...
@@ -131,7 +158,10 @@ curl -s -X DELETE http://127.0.0.1:8787/v1/voices/my-f1-copy      # 204
 Query parameters: `voice` (default `SUPERTONIC_DEFAULT_VOICE`), `language` (`en`), `speed`
 (1.05), `sample_rate` (24000; 16000, 22050, 24000 or 44100), `max_partial_length` (250
 characters; longer unfinished sentences are flushed), `api_key`. `model` is accepted and
-ignored. Prefer the `Authorization` header over `?api_key=`.
+ignored. Prefer the `Authorization` header over `?api_key=` (the CLI redacts `api_key=` from
+uvicorn's access log, but proxies may still record it). A rejected key, or a proxy header
+while the server has no key, arrives as a `conversation.item.tts.failed` event followed by
+close code 1008.
 
 Minimal Python client (needs `pip install websockets`):
 

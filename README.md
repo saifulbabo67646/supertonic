@@ -13,7 +13,7 @@ small web UI. Runs on CPU (ONNX Runtime) on macOS and Windows (Linux should work
 - **Voice library**: 10 built-in voices, import/export/rename/delete custom styles.
 - **MCP server** (`supertonic-mcp`) so Claude Code and other agents can speak and audition voices.
 - **Web UI** at `/` for speaking, browsing voices and copying connection snippets.
-- **Safe by default**: binds to loopback, and refuses to start on a public interface without an API key.
+- **Safe by default**: binds to loopback, refuses to start on a public interface without an API key, and refuses proxied or tunnelled requests while no key is set.
 - **Low latency**: about 210 ms to first audio, 410 ms with four concurrent sessions (Apple M4).
 
 ## Quick start
@@ -21,17 +21,17 @@ small web UI. Runs on CPU (ONNX Runtime) on macOS and Windows (Linux should work
 Requires [uv](https://docs.astral.sh/uv/) (it installs Python 3.11+ for you). The model
 downloads from Hugging Face on first start.
 
+Clone this repository and change into its folder, then start the server.
+
 macOS / Linux:
 
 ```bash
-git clone <this repository> && cd supertonic
 scripts/serve.sh
 ```
 
 Windows (PowerShell):
 
 ```powershell
-git clone <this repository>; cd supertonic
 .\scripts\serve.ps1
 ```
 
@@ -52,15 +52,15 @@ working directory; copy [`.env.example`](.env.example) to start.
 | Variable | Default | Description |
 |---|---|---|
 | `SUPERTONIC_HOST` | `127.0.0.1` | Interface to bind. Anything but loopback requires an API key. |
-| `SUPERTONIC_PORT` | `8787` | TCP port. |
-| `SUPERTONIC_API_KEY` | unset | Bearer token clients must send. Required when the host is not loopback or a public URL is set. |
-| `SUPERTONIC_PUBLIC_URL` | unset | Public URL when behind a tunnel or proxy. Setting it also requires an API key. |
-| `SUPERTONIC_DATA_DIR` | `~/.supertonic-server` | Custom voices and previews. |
+| `SUPERTONIC_PORT` | `8787` | TCP port (1 to 65535). |
+| `SUPERTONIC_API_KEY` | unset | Bearer token clients must send. Required when the host is not loopback or a public URL is set. A blank value means no key. |
+| `SUPERTONIC_PUBLIC_URL` | unset | Public URL when behind a tunnel or proxy (for a quick tunnel with a random hostname, any value works). Setting it also requires an API key. |
+| `SUPERTONIC_DATA_DIR` | `~/.supertonic-server` | Custom voices and previews (`~` is expanded). |
 | `SUPERTONIC_MODEL_DIR` | unset | Local model weights; unset downloads to the Hugging Face cache. |
 | `SUPERTONIC_WORKERS` | `0` | Synthesis workers. `0` means `min(4, max(1, cpu_count // 2))`. |
-| `SUPERTONIC_INTRA_OP_THREADS` | unset | ONNX threads per worker. Unset means `ceil(cpu_count / workers)`. |
-| `SUPERTONIC_MAX_QUEUE` | `64` | Queued synthesis jobs before the server answers 503. |
-| `SUPERTONIC_REALTIME_STEPS` | `3` | Denoising steps for realtime WebSocket sentences. REST requests use `total_steps` (default 8). |
+| `SUPERTONIC_INTRA_OP_THREADS` | unset | ONNX threads per worker (at least 1). Unset means `ceil(cpu_count / workers)`. |
+| `SUPERTONIC_MAX_QUEUE` | `64` | Waiting synthesis jobs before the server answers 503 (at least 1). Realtime work has its own allowance of the same size, so REST traffic cannot crowd it out. |
+| `SUPERTONIC_REALTIME_STEPS` | `3` | Denoising steps (1 to 100) for realtime WebSocket sentences and for `pcm` speech requests that do not set `total_steps`. Other REST requests use `total_steps` (default 8). |
 | `SUPERTONIC_DEFAULT_VOICE` | `F1` | Voice for realtime connections that name none. |
 | `SUPERTONIC_BUILDER_URL` | unset | Voice builder service (reserved for Plan 2). |
 
@@ -94,18 +94,25 @@ tts = openai.TTS(
 )
 ```
 
+Ask for `response_format="pcm"` if your plugin version lets you choose the format: `pcm`
+streams sentence by sentence at realtime priority, while compressed formats (mp3, opus, aac,
+flac) are rendered as whole files and limited to 20 000 characters.
+
 More patterns (live agents with barge-in, narration with timestamps) are in
 [docs/integrations.md](docs/integrations.md).
 
 ## API reference
 
 All endpoints are under `/v1` and, when an API key is set, need `Authorization: Bearer <key>`
-(except `/v1/health`). Full per-endpoint reference with curl examples: [docs/api.md](docs/api.md).
+(except `GET /v1/health`); so do the OpenAPI pages `/docs`, `/redoc` and `/openapi.json`. The
+key is checked before the request body is read. Request bodies are limited to 1 MB (voice
+imports: 2 MB plus 64 KB of multipart framing; larger gives `413 payload_too_large`). Full
+per-endpoint reference with curl examples: [docs/api.md](docs/api.md).
 
 | Method and path | Purpose |
 |---|---|
-| `POST /v1/audio/speech` | OpenAI-compatible speech. Extra fields: `language`, `total_steps`, `sample_rate`. |
-| `POST /v1/tts/timestamps` | Audio (base64) with estimated segment and word timings. |
+| `POST /v1/audio/speech` | OpenAI-compatible speech. Extra fields: `language`, `total_steps`, `sample_rate`. `pcm`/`wav` stream (up to 100 000 characters); other formats up to 20 000. |
+| `POST /v1/tts/timestamps` | Audio (base64) with estimated segment and word timings (up to 20 000 characters). |
 | `GET /v1/voices`, `GET /v1/voices/{id}` | List (filters `kind`, `tag`) and inspect voices. |
 | `POST /v1/voices/import` | Import a style JSON (JSON body or multipart `file`, up to 2 MB). |
 | `PATCH /v1/voices/{id}`, `DELETE /v1/voices/{id}` | Edit or delete a custom voice. |
@@ -143,7 +150,9 @@ Server to client:
 | `context.cancelled` | `context_id`: no further audio for the cancelled work follows. |
 | `conversation.item.tts.failed` | `context_id`, optional `item_id`, `error` object (`message`, `type`, `code`, `param`). |
 
-Limits: at most 32 contexts per connection and 4 synthesising at once (others wait their
+Limits: at most 32 live contexts per connection (a context with text buffered, queued or
+being synthesised; idle contexts are forgotten, oldest first, when room is needed, and their
+per-context settings revert to the session's) and 4 synthesising at once (others wait their
 turn); at most 100 000 characters waiting for synthesis per connection (more gives
 `input_too_long`); if the client stops reading and 4 MB of events are queued, synthesis
 pauses until it catches up. Authentication or parameter errors arrive as a
@@ -196,7 +205,11 @@ cloudflared tunnel --url http://127.0.0.1:8787           # quick tunnel; or a na
 ```
 
 Setting `SUPERTONIC_PUBLIC_URL` makes the API key mandatory: the server refuses to start
-without it (exit status 2). Clients then send `Authorization: Bearer <key>`, and WebSocket
+without it (exit status 2). A quick tunnel gets a random hostname, so set any value (for
+example `SUPERTONIC_PUBLIC_URL=quick-tunnel`) just to turn the check on. As a second safety
+net, a server without a key refuses every request that carries a proxy header
+(`CF-Connecting-IP`, `X-Forwarded-For`, `Forwarded`, `X-Real-IP`) with
+`403 forwarded_without_key`. Clients then send `Authorization: Bearer <key>`, and WebSocket
 clients should use `wss://`. The web UI is served without a key but only does anything useful
 once you enter the key.
 
@@ -207,7 +220,7 @@ the first sentence through the realtime WebSocket:
 
 | sessions | p50 (ms) | p95 (ms) |
 |---|---|---|
-| 1 | about 211 | about 215 |
+| 1 | about 211 | at most 222 |
 | 4 | about 405 | at most 493 |
 
 Methodology, worker/thread/steps tuning and reproduction commands:
@@ -239,4 +252,5 @@ GPL-built ffmpeg that is used for mp3, opus, aac and flac.
 - [Supertone](https://github.com/supertone-inc) for Supertonic 3 and the `supertonic` package.
 - [supertonic.embed](https://github.com/kdrkdrkdr/supertonic.embed), whose approach to
   optimising voice styles Plan 2 builds on.
-- supertonic3-voice-clone, upcoming work on cloning workflows.
+- [supertonic3-voice-clone](https://github.com/saurabhv749/supertonic3-voice-clone), work on
+  voice-cloning workflows for Supertonic 3.

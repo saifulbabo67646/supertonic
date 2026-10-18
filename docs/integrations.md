@@ -11,8 +11,11 @@ interrupts.
 - **Simplest: OpenAI-compatible TTS plugin.** Point the plugin at the server:
   `base_url="http://127.0.0.1:8787/v1"`, `model="supertonic-3"`, `voice="F1"`, any
   `api_key` when auth is off. The plugin calls `POST /v1/audio/speech`; use
-  `response_format="pcm"` so audio streams per sentence (24 kHz, 16-bit mono). This path
-  waits for the plugin to send whole text, so first audio is one sentence of synthesis.
+  `response_format="pcm"` where the plugin lets you choose, so audio streams per sentence
+  (24 kHz, 16-bit mono) at realtime priority with `SUPERTONIC_REALTIME_STEPS` (unless you
+  pass `total_steps`). Compressed formats are rendered whole and limited to 20 000
+  characters. This path waits for the plugin to send whole text, so first audio is one
+  sentence of synthesis.
 - **Lowest latency: the realtime WebSocket.** Stream the LLM's tokens with
   `input_text_buffer.append` as they arrive; each finished sentence is synthesised and
   returned immediately, without waiting for the rest of the reply. Send
@@ -20,9 +23,11 @@ interrupts.
 - **Barge-in.** When the user starts talking, send `context.cancel` for the context that is
   speaking. The server stops synthesis, drops audio it has not sent yet and answers
   `context.cancelled`; no `delta` for that context follows. Use one `context_id` per agent
-  turn so a cancelled turn never mixes with the next one.
+  turn so a cancelled turn never mixes with the next one; finished or cancelled contexts
+  are forgotten as needed, so a long conversation never runs out of contexts.
 - **Concurrency.** The server runs 4 workers on a 10-core machine and prioritises
-  realtime sentences over REST requests. On Apple M4 (see [benchmarks](benchmarks.md))
+  realtime sentences (and `pcm` speech) over other REST requests, which also cannot fill
+  the queue that realtime work uses. On Apple M4 (see [benchmarks](benchmarks.md))
   first audio arrives in about 210 ms alone and about 410 ms (p95 under 500 ms) with 4
   simultaneous sessions. Size `SUPERTONIC_WORKERS` for your expected concurrent sessions.
 - **Sample rate.** Ask for what your pipeline uses (`sample_rate=16000` or `24000`) so no
@@ -45,8 +50,10 @@ Goal: narrate a script and align captions or visuals to words.
    sentence. Keep sentences short for tight sync, and snap caption cuts to `segments`
    boundaries, which are exact.
 4. For Japanese, `timing_unit` is `character`: each item is one character.
-5. Choose a voice by id and fail on error. An unknown voice or language returns a 400 with
-   a `voice_not_found` / `language_not_supported` code; treat that as a hard failure
+5. Choose a voice by id and fail on error. An unknown voice returns `404 voice_not_found`
+   and an unknown language `400 language_not_supported`; treat either as a hard failure
    rather than falling back to another voice.
-6. Use `total_steps` 8 (the default) for final renders. Fewer steps are faster but the
+6. Keep each request under 20 000 characters (one scene or paragraph at a time); longer
+   text is refused with `400 input_too_long`.
+7. Use `total_steps` 8 (the default) for final renders. Fewer steps are faster but the
    quality has not been evaluated.
