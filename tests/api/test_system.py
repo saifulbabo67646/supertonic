@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from supertonic_server import __version__
 from supertonic_server.api import AppState, create_app
 from supertonic_server.api.deps import preview
+from supertonic_server.cli import main
 from supertonic_server.core.config import ConfigError, Settings
 from supertonic_server.core.errors import ApiError
 from supertonic_server.engine import Engine
@@ -130,3 +131,51 @@ async def test_preview_renders_once(settings: Settings, engine: Engine, lib: Voi
     await preview(state, "F1", "en")
     assert calls == 1
     assert not list(paths[0].parent.glob("*.tmp"))
+
+
+async def test_unknown_and_wrong_method_are_json(client: httpx.AsyncClient) -> None:
+    r = await client.get("/v1/nope")
+    assert r.status_code == 404 and r.json()["error"]["code"] == "not_found"
+    r = await client.post("/v1/health")
+    assert r.status_code == 405 and r.json()["error"]["code"] == "method_not_allowed"
+
+
+async def test_bearer_scheme_case_insensitive(authed_client: httpx.AsyncClient) -> None:
+    r = await authed_client.get("/v1/languages", headers={"Authorization": "bearer secret"})
+    assert r.status_code == 200
+
+
+async def test_preview_rejects_bad_lang(
+    settings: Settings, engine: Engine, lib: VoiceLibrary
+) -> None:
+    state = AppState(settings, engine, lib)
+    with pytest.raises(ApiError) as e:
+        await preview(state, "F1", "../../x")
+    assert e.value.code == "language_not_supported"
+    with pytest.raises(ApiError) as e2:
+        await preview(state, "nope", "en")
+    assert e2.value.code == "voice_not_found"
+    assert not (settings.data_dir / "x.wav").exists()
+    assert not list(lib.custom_dir.rglob("*.wav")) if lib.custom_dir.exists() else True
+
+
+def test_one_sided_injection_rejected(settings: Settings, engine: Engine) -> None:
+    with pytest.raises(ValueError):
+        create_app(settings, engine, None)
+
+
+def test_cli_exit_2_on_unsafe_config(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as e:
+        main(["serve", "--host", "0.0.0.0"])  # noqa: S104
+    assert e.value.code == 2
+    assert "SUPERTONIC_API_KEY" in capsys.readouterr().err
+
+
+def test_cli_exit_2_on_invalid_settings(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("SUPERTONIC_MAX_QUEUE", "abc")
+    with pytest.raises(SystemExit) as e:
+        main(["serve"])
+    assert e.value.code == 2
+    assert capsys.readouterr().err.startswith("error:")

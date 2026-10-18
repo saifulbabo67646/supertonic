@@ -62,6 +62,8 @@ async def require_key(request: Request) -> None:
 
 async def preview(state: AppState, voice_id: str, lang: str) -> Path:
     """Return the cached preview WAV for a voice and language, rendering it once if missing."""
+    get_language(lang)
+    state.library.get(voice_id)
     path = state.library.preview_path(voice_id, lang)
     if path.exists():
         return path

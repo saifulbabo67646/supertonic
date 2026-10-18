@@ -25,6 +25,8 @@ def create_app(
 
     When ``engine``/``library`` are omitted they are loaded during startup.
     """
+    if (engine is None) != (library is None):
+        raise ValueError("pass both engine and library, or neither")
     check_startup(settings)
 
     @asynccontextmanager

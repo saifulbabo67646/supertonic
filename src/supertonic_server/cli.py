@@ -6,6 +6,8 @@ import argparse
 import sys
 from collections.abc import Sequence
 
+from pydantic import ValidationError
+
 from supertonic_server.core.config import ConfigError, Settings
 
 
@@ -24,7 +26,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         from supertonic_server.api import create_app
 
         app = create_app(settings)
-    except ConfigError as exc:
+    except (ConfigError, ValidationError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         raise SystemExit(2) from exc
 
