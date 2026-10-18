@@ -171,9 +171,10 @@ lands in the builder's library.
 
 ## During a build
 
-The job state is `queued`, then `running` with a stage: `preparing` (decoding and checking
-the reference), `loading`, `preset` (the nearest-preset scan), `timbre` (the optimisation,
-with step, total and loss), `duration` (the rhythm) and `saving`. One build runs at a time
+The reference audio is decoded and checked while the build request is answered, before the
+job exists. The job state is `queued`, then `running` with a stage: `loading`, `preset` (the
+nearest-preset scan), `timbre` (the optimisation, with step, total and loss), `duration`
+(the rhythm) and `saving`. One build runs at a time
 per builder; up to 8 more wait, and a ninth gets `503 builder_busy`.
 
 - **Cancel** (`DELETE /v1/jobs/{id}`, the Cancel button) stops the worker and its whole

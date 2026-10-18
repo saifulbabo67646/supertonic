@@ -231,8 +231,28 @@ resumes following jobs that were still queued or running.
 | 404 | `job_not_found` | unknown job id |
 | 409 | `job_not_running` | `finish` on a job that has not started |
 | 413 | `payload_too_large` | upload over the limit |
+| 502 | `builder_error` | the remote builder answered with something that is not an API error (for example a proxy page) |
 | 503 | `builder_unavailable` | no builder, it is shutting down, or the remote builder is unreachable |
 | 503 | `builder_busy` | the queue is full |
+
+A job that ends `failed` has `error: {"code", "message"}`; the message never names local
+file paths (home and temp folders show as `<home>` and `<tmp>`). A forwarded job reports
+the builder's code unchanged.
+
+| `error.code` | meaning |
+|---|---|
+| `timeout` | the build ran longer than `SUPERTONIC_BUILDER_TIMEOUT_MIN` |
+| `interrupted` | the server restarted while the job was queued or running |
+| `worker_failed` | the worker process crashed or could not start (the message is its last error line) |
+| `out_of_memory` | not enough GPU memory |
+| `cuda_unavailable` | the worker found no CUDA device |
+| `missing_dependencies` | the builder extra (PyTorch and friends) is not installed or does not import |
+| `nothing_to_save` | Finish now arrived while models were still loading, before any style existed |
+| `extract_failed` | the extraction raised another error (the message says which) |
+| `bad_arguments` | the worker was started with wrong arguments (a bug or a version mismatch) |
+| `import_failed` | the voice was built but could not be saved into the library |
+| `builder_lost` | forwarded job: the builder could not be reached for 2 minutes, or forgot the job |
+| `internal_error` | an unexpected error in the server itself |
 
 ## Realtime WebSocket
 

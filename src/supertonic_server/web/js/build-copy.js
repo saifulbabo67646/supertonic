@@ -12,7 +12,6 @@ export const METHODS = [
 export const METHOD_NAMES = { accurate: "Best match", fast: "Quick draft" };
 
 export const STAGE_LABELS = {
-  preparing: "Preparing the recording",
   loading: "Loading models",
   preset: "Finding the closest preset voice",
   timbre: "Matching the timbre",

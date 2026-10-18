@@ -11,7 +11,7 @@ from supertonic_server.core.errors import ApiError
 
 JobState = Literal["queued", "running", "succeeded", "failed", "cancelled"]
 BuildMethod = Literal["accurate", "fast"]
-Stage = Literal["preparing", "loading", "preset", "timbre", "duration", "saving"]
+Stage = Literal["loading", "preset", "timbre", "duration", "saving"]
 
 BUILD_METHODS: tuple[BuildMethod, ...] = ("accurate", "fast")
 MAX_NAME_LEN = 100

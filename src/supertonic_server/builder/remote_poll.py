@@ -15,6 +15,7 @@ from supertonic_server.builder import remote_import
 from supertonic_server.builder.models import Job, JobState
 from supertonic_server.builder.remote_http import BuilderClient, Unreachable
 from supertonic_server.core.errors import ApiError
+from supertonic_server.core.scrub import scrub_paths
 from supertonic_server.voices import Voice, VoiceLibrary
 
 logger = logging.getLogger(__name__)
@@ -73,7 +74,8 @@ class RemotePolling:
                     self._settle(job, "failed", {"code": "builder_lost", "message": message})
             except Exception as exc:  # never leave a mirror job hanging
                 logger.exception("job %s: polling %s crashed", job.id, self.host)
-                self._settle(job, "failed", {"code": "internal_error", "message": str(exc)})
+                error = {"code": "internal_error", "message": scrub_paths(str(exc))}
+                self._settle(job, "failed", error)
 
     async def _poll_once(self, job: Job) -> None:
         if job.remote_id is None:
