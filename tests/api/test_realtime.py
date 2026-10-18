@@ -306,6 +306,7 @@ class _StalledSocket:
     def __init__(self) -> None:
         self.incoming: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         self.reading = asyncio.Event()
+        self.done = asyncio.Event()
         self.sent: list[dict[str, Any]] = []
 
     async def receive(self) -> dict[str, Any]:
@@ -314,6 +315,8 @@ class _StalledSocket:
     async def send_text(self, text: str) -> None:
         await self.reading.wait()
         self.sent.append(json.loads(text))
+        if self.sent[-1]["type"] == DONE:
+            self.done.set()
 
     def client_sends(self, event: dict[str, Any]) -> None:
         self.incoming.put_nowait({"type": "websocket.receive", "text": json.dumps(event)})
@@ -323,6 +326,15 @@ async def test_slow_reader_pauses_synthesis(
     settings: Settings, engine: Engine, lib: VoiceLibrary, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(outbox, "HIGH_WATER_BYTES", 10_000)  # one delta exceeds it
+    paused = asyncio.Event()
+    real_wait = outbox.Outbox.wait_for_room
+
+    async def spy_wait(self: outbox.Outbox) -> None:
+        if self.pending_bytes > self.high_water:
+            paused.set()  # the consumer is about to block on backpressure
+        await real_wait(self)
+
+    monkeypatch.setattr(outbox.Outbox, "wait_for_room", spy_wait)
     state = AppState(settings, engine, lib)
     sock = _StalledSocket()
     params = parse_params(QueryParams(""), state)
@@ -330,14 +342,11 @@ async def test_slow_reader_pauses_synthesis(
     text = " ".join(f"Sentence number {i}." for i in range(20))
     sock.client_sends({"type": "input_text_buffer.append", "text": text})
     sock.client_sends({"type": "input_text_buffer.commit"})
-    await asyncio.sleep(0.3)
+    await asyncio.wait_for(paused.wait(), timeout=5)
     calls = engine.model.calls  # type: ignore[attr-defined]
-    assert 1 <= len(calls) <= 2  # paused while the client does not read
+    assert len(calls) == 1  # one delta is waiting to be read; the next sentence waits
     sock.reading.set()
-    for _ in range(100):
-        if any(m["type"] == DONE for m in sock.sent):
-            break
-        await asyncio.sleep(0.05)
+    await asyncio.wait_for(sock.done.wait(), timeout=5)
     assert len(calls) == 20 and len(_deltas(sock.sent)) == 20
     sock.incoming.put_nowait({"type": "websocket.disconnect", "code": 1000})
     await run

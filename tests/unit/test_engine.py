@@ -208,8 +208,32 @@ async def test_abandoned_stream_drops_queued_work(caplog: pytest.LogCaptureFixtu
     assert [r for r in caplog.records if r.levelno >= logging.ERROR] == []
 
 
+class _GatedModel(FakeModel):
+    """Each call announces itself and then waits until the test opens its gate."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._events: dict[tuple[str, str], threading.Event] = {}
+        self._guard = threading.Lock()
+
+    def event(self, kind: str, text: str) -> threading.Event:
+        with self._guard:
+            return self._events.setdefault((kind, text), threading.Event())
+
+    def __call__(self, text_list: list[str], *args: Any, **kwargs: Any) -> Any:
+        self.event("entered", text_list[0]).set()
+        self.event("gate", text_list[0]).wait(timeout=5)
+        return super().__call__(text_list, *args, **kwargs)
+
+    async def entered(self, text: str) -> None:
+        assert await asyncio.to_thread(self.event("entered", text).wait, 5)
+
+    def release(self, text: str) -> None:
+        self.event("gate", text).set()
+
+
 async def test_cancelled_stream_consumer_drops_work() -> None:
-    model = FakeModel(delay=0.1)
+    model = _GatedModel()
     eng = Engine(model, Scheduler(workers=1, max_queue=64))
 
     async def consume() -> None:
@@ -217,11 +241,15 @@ async def test_cancelled_stream_consumer_drops_work() -> None:
             pass
 
     task = asyncio.create_task(consume())
-    await asyncio.sleep(0.15)  # "A." done, "B." running, "C." queued
+    await model.entered("A.")
+    model.release("A.")
+    await model.entered("B.")  # "A." consumed, "B." running, "C." queued as lookahead
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
-    await asyncio.sleep(0.2)
+    model.release("B.")
+    # One worker, FIFO: this sentinel runs only after "B." and after "C." had it stayed queued.
+    await eng.scheduler.submit(lambda: None, PRIORITY_DEFAULT)
     assert [c[0][0] for c in model.calls] == ["A.", "B."]
     assert eng.scheduler.waiting == 0 and eng.scheduler.running == 0
 
