@@ -19,6 +19,8 @@ const ui = {};
 let methods = [];
 let available = false;
 let visit = 0;
+/** The "Build queued for …" note: which job it is about and its text (null when not shown). */
+let queuedNote = null;
 
 function methodField() {
   ui.methodHint = h("p", { class: "hint", id: "method-hint" });
@@ -134,7 +136,8 @@ async function submit(e) {
     ui.form.reset();
     ui.clips.reset();
     applyMethods();
-    ui.status.set(`Build queued for ${job.request.name}.`, "ok");
+    queuedNote = { jobId: job.id, text: `Build queued for ${job.request.name}.` };
+    ui.status.set(queuedNote.text, "ok");
     openJob(job, true);
     refreshJobs();
   } catch (err) {
@@ -142,6 +145,13 @@ async function submit(e) {
   } finally {
     ui.submit.disabled = false;
   }
+}
+
+/** Drop the queued note once its job has left the queue (started, finished or cancelled). */
+function clearQueuedNote(job) {
+  if (!queuedNote || job.id !== queuedNote.jobId || job.state === "queued") return;
+  if (ui.status.textContent === queuedNote.text) ui.status.clear();
+  queuedNote = null;
 }
 
 function openJob(job, focus) {
@@ -196,7 +206,10 @@ export function mount(root) {
   };
   window.addEventListener("dragover", guard);
   window.addEventListener("drop", guard);
-  ui.job = createJobView(() => refreshJobs());
+  ui.job = createJobView((job) => {
+    clearQueuedNote(job);
+    refreshJobs();
+  });
   ui.jobs = h("div", { class: "jobs" });
   ui.unavailable = h("p", { class: "notice panel", hidden: true, text: NO_BUILDER_TEXT });
   ui.body = h(

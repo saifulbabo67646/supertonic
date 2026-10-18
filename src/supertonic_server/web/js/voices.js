@@ -4,7 +4,7 @@
 import * as api from "./api.js";
 import { playPreview } from "./audio.js";
 import { buildFacts, NO_BUILDER_TEXT } from "./build-copy.js";
-import { getHealth, getLanguages, getVoices, onVoicesChanged, refreshVoices } from "./catalog.js";
+import { getHealth, getLanguages, onVoicesChanged, refreshVoices } from "./catalog.js";
 import { downloadBlob, h, replace, statusLine } from "./dom.js";
 import { buildImportForm } from "./voice-import.js";
 import { confirmDelete, editForm } from "./voice-manage.js";
@@ -230,7 +230,8 @@ function focusCard(voiceId) {
 export async function show(params) {
   renderBuildEntry();
   try {
-    const [langs, list] = await Promise.all([getLanguages(), getVoices()]);
+    // Always refetch: voices may have been built or imported elsewhere (MCP, REST, other tabs).
+    const [langs, list] = await Promise.all([getLanguages(), refreshVoices()]);
     languages = langs;
     voices = list;
     render();
