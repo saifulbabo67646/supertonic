@@ -194,10 +194,15 @@ runs at a time; up to 8 more wait in the queue.
 curl -s 'http://127.0.0.1:8787/v1/jobs?limit=20'              # {"data":[job, ...]}, newest first
 curl -s http://127.0.0.1:8787/v1/jobs/3f2c...                 # one job, with progress
 curl -s -X DELETE http://127.0.0.1:8787/v1/jobs/3f2c...       # cancel (a finished job is returned as is)
-curl -s -X POST http://127.0.0.1:8787/v1/jobs/3f2c.../finish  # stop optimising, save the best so far
+curl -s -X POST http://127.0.0.1:8787/v1/jobs/3f2c.../finish  # end the timbre stage early, keep the best so far
 ```
 
-`finish` makes a running job succeed early with `build.stopped_early: true`.
+`finish` ends a running job's timbre optimisation at the next step, keeping the best result
+so far; the rhythm matching still runs, then the voice is imported and the job succeeds
+with `build.stopped_early: true`. Finishing while models are still loading makes the job
+fail with `nothing_to_save`. `finish` is accepted once per job (a second call changes
+nothing); on a job that already ended it returns the job unchanged (200). A queued job
+gives `409 job_not_running`.
 
 With `SUPERTONIC_BUILDER_URL` (and `SUPERTONIC_BUILDER_API_KEY` when the builder has an API
 key) a machine without a GPU forwards each build to that server. The request itself

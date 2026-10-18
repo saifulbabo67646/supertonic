@@ -205,7 +205,10 @@ class JobManager:
         return job
 
     async def finish(self, job_id: str) -> Job:
-        """Ask the running worker to save its best result now.
+        """Ask the running worker to end the timbre stage now (rhythm matching still runs).
+
+        Accepted once: while the job is already stopping, or once it has ended, the job is
+        returned unchanged.
 
         Raises:
             ApiError: 409 ``job_not_running`` for a queued job.

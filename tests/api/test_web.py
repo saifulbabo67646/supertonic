@@ -53,6 +53,9 @@ async def test_web_new_voice_copy(client: httpx.AsyncClient) -> None:
     copy = (await client.get("/js/build-copy.js")).text
     assert "Quick draft — about 10 minutes" in copy
     assert "OpenRAIL-M" in copy
+    assert "Finishing: matching the speaking pace…" in copy
+    job_view = (await client.get("/js/build-job.js")).text
+    assert "FINISHING_LABELS[p?.stage]" in job_view
     screen = (await client.get("/js/new-voice.js")).text
     assert "I have the speaker's permission to create and use this voice" in screen
 

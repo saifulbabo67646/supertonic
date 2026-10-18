@@ -1,7 +1,14 @@
 // Build progress view: polls one job, shows stage, steps, ETA and loss; Finish now, Cancel, Try it.
 
 import * as api from "./api.js";
-import { ACTIVE_STATES, duration, METHOD_NAMES, STAGE_LABELS, STATE_LABELS } from "./build-copy.js";
+import {
+  ACTIVE_STATES,
+  duration,
+  FINISHING_LABELS,
+  METHOD_NAMES,
+  STAGE_LABELS,
+  STATE_LABELS,
+} from "./build-copy.js";
 import { loadResult, resultNodes } from "./build-result.js";
 import { h, replace, statusLine } from "./dom.js";
 
@@ -150,7 +157,8 @@ export function createJobView(onChange) {
     let stageText = "";
     if (job.state === "queued") stageText = "Waiting for the builder to be free…";
     else if (job.state === "running" && job.stopping) {
-      stageText = "Finishing: saving the best result so far…";
+      // Finish now ends the timbre stage only; the rhythm match and saving still follow.
+      stageText = FINISHING_LABELS[p?.stage] || "Finishing: keeping the best result so far…";
     } else if (job.state === "running") {
       stageText = p ? STAGE_LABELS[p.stage] || p.stage : "Starting…";
     }

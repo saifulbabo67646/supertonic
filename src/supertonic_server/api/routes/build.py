@@ -92,5 +92,5 @@ async def cancel_job(job_id: str, state: State) -> dict[str, Any]:
 
 @router.post("/jobs/{job_id}/finish")
 async def finish_job(job_id: str, state: State) -> dict[str, Any]:
-    """Ask a running job to stop optimising and save its best result so far."""
+    """Ask a running job to end its timbre stage now; the rhythm stage still runs."""
     return (await _builder(state).finish(job_id)).to_dict()

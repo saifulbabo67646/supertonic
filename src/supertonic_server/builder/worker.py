@@ -10,10 +10,11 @@ per line to stdout:
   ``cuda_unavailable``, ``out_of_memory``, ``extract_failed``, ``missing_dependencies``,
   ``nothing_to_save``, ``bad_arguments``.
 
-Logs go to stderr. Creating the ``--stop-file`` asks the extractor to stop optimising and
-save the best style so far. ``--self-test`` prints a single ``probe`` line describing torch,
-CUDA and the methods whose dependencies import, then exits. ``SUPERTONIC_BUILDER_FAKE=1``
-swaps in :mod:`.extract.fake` (and a fake probe) for tests.
+Logs go to stderr. Creating the ``--stop-file`` asks the extractor to end the timbre stage
+with the best style so far (the rhythm stage still runs), then save it. ``--self-test``
+prints a single ``probe`` line describing torch, CUDA and the methods whose dependencies
+import, then exits. ``SUPERTONIC_BUILDER_FAKE=1`` swaps in :mod:`.extract.fake` (and a fake
+probe) for tests.
 """
 
 from __future__ import annotations

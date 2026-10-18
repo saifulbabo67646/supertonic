@@ -20,6 +20,12 @@ export const STAGE_LABELS = {
   saving: "Saving the voice",
 };
 
+/** Stage text after Finish now, for the stages that still run after the timbre stops. */
+export const FINISHING_LABELS = {
+  duration: "Finishing: matching the speaking pace…",
+  saving: "Finishing: saving the voice…",
+};
+
 export const STATE_LABELS = {
   queued: "Waiting",
   running: "Building",

@@ -123,11 +123,14 @@ def register_build_tools(server: MCPServer, client: SupertonicClient) -> None:
 
     @server.tool()
     async def finish_job(job_id: str) -> dict[str, Any]:
-        """Stop a running build now and keep the best result so far.
+        """End a running build's timbre stage now and keep the best result so far.
 
-        Only applies while the job is running (an unknown or already finished job is an
-        error). The job then succeeds and its voice is imported (flagged as stopped early). Call
-        ``get_job`` to see when it is done. Returns the updated job.
+        The rhythm (speaking pace) stage still runs, about 2.5 minutes, then the voice is
+        imported and the job succeeds, flagged as stopped early. Finishing while models are
+        still loading makes the job fail with ``nothing_to_save``. A queued job is an error
+        (``job_not_running``), as is an unknown id; a job that already ended is returned
+        unchanged, and a second call while finishing changes nothing. Call ``get_job`` to
+        see when it is done. Returns the updated job.
         """
         try:
             return await client.finish(job_id)

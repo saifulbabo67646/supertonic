@@ -50,7 +50,12 @@ def finish_with_duration(
 
     ``prompts`` are the sentences the speaking rate is measured on; ``extra`` adds
     method-specific report keys (see :func:`~supertonic_server.builder.extract.base.make_report`).
+
+    Finish now ends only the timbre stage: when the stop was already requested on entry, the
+    rhythm match still runs in full (the stop file stays in place, so it would otherwise end
+    this stage at once). A stop that first arrives during this stage ends it early.
     """
+    rhythm_stop: StopCheck = (lambda: False) if should_stop() else should_stop
     on_progress(
         progress("duration", "matching the reference speaking rate", step=0, total=cfg.max_iters)
     )
@@ -62,7 +67,7 @@ def finish_with_duration(
         tts,
         cfg,
         on_progress=on_progress,
-        should_stop=should_stop,
+        should_stop=rhythm_stop,
     )
     report = make_report(
         method,

@@ -179,13 +179,19 @@ per builder; up to 8 more wait, and a ninth gets `503 builder_busy`.
 - **Cancel** (`DELETE /v1/jobs/{id}`, the Cancel button) stops the worker and its whole
   process tree within seconds. The job ends `cancelled` and nothing is imported.
 - **Finish now** (`POST /v1/jobs/{id}/finish`, the Finish now button, MCP `finish_job`)
-  stops the optimisation at the next step and keeps the best numbers found so far, then
-  saves and imports the voice. The job succeeds with `build.stopped_early: true`. The
-  rhythm matching is skipped too (`duration_status: "stopped"`), so the voice keeps the
-  speaking rate of its start preset. An `accurate` build is already close to the speaker
-  after a few hundred steps (similarity about 0.8 for the test voice after 300 steps), so
-  this is a good way to get a usable voice sooner. Finishing before the first step keeps the start
-  preset; finishing before any style exists fails with `nothing_to_save`.
+  ends the timbre stage: the optimisation stops at the next step and keeps the best numbers
+  found so far. The rhythm matching (`duration`, about 2.5 minutes) still runs in full, then
+  the voice is saved and imported; the UI shows "Finishing: matching the speaking pace" in
+  the meantime. The job succeeds with `build.stopped_early: true` and a real
+  `duration_status` (for example `converged`). An `accurate` build is already close to the
+  speaker after a few hundred steps (similarity about 0.8 for the test voice after 300
+  steps), so this is a good way to get a usable voice sooner. Finishing during the preset
+  scan keeps the nearest preset measured so far; finishing while models are still loading
+  (before any style exists) fails with `nothing_to_save`. Finish now is accepted once per
+  job: a second press while it is finishing changes nothing, so the rhythm stage cannot be
+  cut short that way. Only when the timbre stage ended on its own does a Finish now during
+  the rhythm stage stop it (`duration_status: "stopped"`, the start preset's rhythm is
+  kept). Finish on a job that already ended returns it unchanged.
 - A build that runs longer than `SUPERTONIC_BUILDER_TIMEOUT_MIN` (default 150) fails with
   `timeout`. A server restart marks unfinished local jobs `failed` (`interrupted`). Jobs
   are kept for 7 days under `<data dir>/jobs/<id>/` with `worker.log` and `progress.jsonl`.

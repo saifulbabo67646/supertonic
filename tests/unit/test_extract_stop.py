@@ -5,6 +5,7 @@ Runs wherever the ``builder`` extra is installed (no GPU, no weights); skipped o
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -20,12 +21,15 @@ for _dep in ("librosa", "scipy", "soundfile", "onnx2torch", "onnxslim"):
 import soundfile as sf  # noqa: E402
 
 from supertonic_server.builder import Progress  # noqa: E402
+from supertonic_server.builder.extract.accurate import extract as accurate_extract  # noqa: E402
+from supertonic_server.builder.extract.accurate.config import AccurateConfig  # noqa: E402
 from supertonic_server.builder.extract.base import NothingToSaveError  # noqa: E402
 from supertonic_server.builder.extract.common.duration import duration_inversion  # noqa: E402
+from supertonic_server.builder.extract.common.finish import finish_with_duration  # noqa: E402
 from supertonic_server.builder.extract.common.preset_scan import nearest_preset  # noqa: E402
 from supertonic_server.builder.extract.duration_config import DurationConfig  # noqa: E402
 from supertonic_server.builder.extract.fast import extract as fast_extract  # noqa: E402
-from supertonic_server.builder.extract.fast.config import TimbreConfig  # noqa: E402
+from supertonic_server.builder.extract.fast.config import FastConfig, TimbreConfig  # noqa: E402
 from supertonic_server.builder.extract.fast.invert_ttl import invert  # noqa: E402
 from supertonic_server.builder.extract.fast.wavlm_loss import (  # noqa: E402
     layer_stats,
@@ -311,3 +315,117 @@ def test_fast_rejects_bad_wav_before_loading_models(
             should_stop=lambda: False,
             device="cpu",
         )
+
+
+SMALL_DURATION = DurationConfig(invert_steps=5, max_iters=3)
+
+
+class StopFlag:
+    """The STOP file: absent until :meth:`press` (Finish now)."""
+
+    def __init__(self) -> None:
+        self.pressed = False
+
+    def press(self) -> None:
+        self.pressed = True
+
+    def __call__(self) -> bool:
+        return self.pressed
+
+
+class BuildTTS(DurationTTS):
+    """``DurationTTS`` plus what the method pipelines ask of the frozen TTS."""
+
+    def build_prompts(self, texts: Any, dp: Any) -> list[Any]:
+        return [PROMPT]
+
+
+def _timbre_finished_now(flag: StopFlag, ttl_arg: int) -> Any:
+    """A timbre stage during which Finish now is pressed: it stops after 2 steps."""
+
+    def run(*args: Any, **kwargs: Any) -> Any:
+        flag.press()
+        ttl = args[ttl_arg]
+        return SimpleNamespace(ttl=ttl, loss=0.3, steps=2, taken=2, best_step=2, stopped=True)
+
+    return run
+
+
+def _run_method(
+    method: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, flag: StopFlag
+) -> Any:
+    model = _model_dir(tmp_path)
+    for name in ("F4", "M1"):
+        _write_style(model / "voice_styles" / f"{name}.json", [1.0])
+    chosen = (model / "voice_styles" / "F1.json", 0.4, False)
+    events: list[Progress] = []
+    if method == "fast":
+        mod: Any = fast_extract
+        monkeypatch.setattr(mod, "load_wavlm", lambda device: _wavlm)
+        monkeypatch.setattr(mod, "target_from_file", lambda *a: ZERO_TARGET)
+        monkeypatch.setattr(mod, "invert", _timbre_finished_now(flag, ttl_arg=1))
+        config: Any = FastConfig(duration=SMALL_DURATION)
+    else:
+        mod = accurate_extract
+        monkeypatch.setattr(mod, "load_ecapa", lambda device: object())
+        monkeypatch.setattr(mod, "SpeakerLoss", lambda *a: object())
+        monkeypatch.setattr(mod, "load_reference16", lambda *a: None)
+        monkeypatch.setattr(mod, "training_prompts", lambda *a: [PROMPT])
+        monkeypatch.setattr(mod, "optimise", _timbre_finished_now(flag, ttl_arg=0))
+        config = dataclasses.replace(AccurateConfig(), duration=SMALL_DURATION)
+    monkeypatch.setattr(mod, "load_frozen_tts", lambda *a, **k: BuildTTS())
+    monkeypatch.setattr(mod, "nearest_preset", lambda *a, **k: chosen)
+    _, report = mod.extract_style(
+        _wav(tmp_path),
+        model,
+        on_progress=events.append,
+        should_stop=flag,
+        device="cpu",
+        config=config,
+    )
+    return report, events
+
+
+@pytest.mark.parametrize("method", ["fast", "accurate"])
+def test_finish_during_timbre_still_matches_rhythm(
+    method: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    report, events = _run_method(method, tmp_path, monkeypatch, StopFlag())
+    assert report["stopped_early"] is True
+    assert report["duration_status"] != "stopped"
+    assert report["rate_final"] is not None
+    duration_steps = [e.step for e in events if e.stage == "duration"]
+    assert duration_steps[0] == 0 and max(s or 0 for s in duration_steps) >= 1
+
+
+def _finish(wav: Path, stop: Any) -> dict[str, Any]:
+    _, report = finish_with_duration(
+        "fast",
+        wav,
+        torch.zeros(1, 50, 256),
+        _dp_start(),
+        [PROMPT],
+        BuildTTS(),  # type: ignore[arg-type]
+        SMALL_DURATION,
+        on_progress=lambda p: None,
+        should_stop=stop,
+        preset_start="F1",
+        preset_distance=0.4,
+        loss=0.3,
+        steps=5,
+        stopped_early=False,
+    )
+    return report
+
+
+def test_finish_during_rhythm_alone_stops_rhythm(tmp_path: Path) -> None:
+    # timbre ended on its own (no STOP yet); the STOP arrives as rhythm starts
+    report = _finish(_wav(tmp_path), StopAfter(1))
+    assert report["duration_status"] == "stopped"
+    assert report["stopped_early"] is True
+
+
+def test_no_finish_runs_rhythm_to_its_end(tmp_path: Path) -> None:
+    report = _finish(_wav(tmp_path), StopAfter(10**6))
+    assert report["duration_status"] != "stopped"
+    assert report["stopped_early"] is False

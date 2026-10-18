@@ -169,7 +169,7 @@ class SupertonicClient:
         return data
 
     async def finish(self, job_id: str) -> dict[str, Any]:
-        """Call ``POST /v1/jobs/{id}/finish`` (stop optimising, keep the best result)."""
+        """Call ``POST /v1/jobs/{id}/finish`` (end the timbre stage, keep the best)."""
         resp = await self._request("POST", f"/v1/jobs/{_segment(job_id)}/finish")
         data: dict[str, Any] = resp.json()
         return data

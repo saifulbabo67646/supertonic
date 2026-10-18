@@ -126,6 +126,6 @@ export const job = (jobId) => getJson(`/v1/jobs/${encodeURIComponent(jobId)}`);
 export const cancelJob = (jobId) =>
   getJson(`/v1/jobs/${encodeURIComponent(jobId)}`, { method: "DELETE" });
 
-/** POST /v1/jobs/{id}/finish: stop optimising and keep the best result so far → Job. */
+/** POST /v1/jobs/{id}/finish: end the timbre stage, keep the best so far → Job. */
 export const finishJob = (jobId) =>
   getJson(`/v1/jobs/${encodeURIComponent(jobId)}/finish`, { method: "POST" });

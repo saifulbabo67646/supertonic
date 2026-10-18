@@ -50,7 +50,9 @@ def extract_style(
         model_dir: The Supertonic 3 directory (``onnx/`` and ``voice_styles/``).
         on_progress: Called with each progress snapshot.
         should_stop: Polled every optimisation step; when it returns true the extractor
-            stops and returns the best style so far with ``stopped_early: true``.
+            ends the timbre stage with the best style so far, still matches the rhythm,
+            and returns it with ``stopped_early: true``. A stop that first appears during
+            the rhythm stage ends that stage too.
         device: Torch device, e.g. ``"cuda"``.
 
     Returns:
