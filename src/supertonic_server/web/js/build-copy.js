@@ -5,7 +5,7 @@ import { h } from "./dom.js";
 /** Radio labels for the build methods, in display order. */
 export const METHODS = [
   ["accurate", "Best match — about 1½ hours"],
-  ["fast", "Quick draft — about 10 minutes"],
+  ["fast", "Quick draft — about 15 minutes"],
 ];
 
 /** Short method names for cards and lists. */

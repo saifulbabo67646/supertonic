@@ -51,7 +51,7 @@ async def test_web_new_voice_view_present(client: httpx.AsyncClient) -> None:
 
 async def test_web_new_voice_copy(client: httpx.AsyncClient) -> None:
     copy = (await client.get("/js/build-copy.js")).text
-    assert "Quick draft — about 10 minutes" in copy
+    assert "Quick draft — about 15 minutes" in copy
     assert "OpenRAIL-M" in copy
     assert "Finishing: matching the speaking pace…" in copy
     job_view = (await client.get("/js/build-job.js")).text

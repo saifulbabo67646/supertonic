@@ -59,7 +59,7 @@ def register_build_tools(server: MCPServer, client: SupertonicClient) -> None:
         Requires the consent of the speaker (``consent`` must be true) and a ``source_note``
         saying whose voice it is and where the audio came from. ``accurate`` sounds much
         closer to the speaker and takes about 1.5 h on a laptop GPU; ``fast`` takes about
-        10 min and is a rough likeness. The build runs in the background: call ``get_job``
+        15 min and is a rough likeness. The build runs in the background: call ``get_job``
         with the returned ``job_id`` to follow progress, and ``finish_job`` to stop early and
         keep the best result so far.
 

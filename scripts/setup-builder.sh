@@ -70,5 +70,5 @@ cat <<MSG
    If a firewall is active, allow TCP $port from your LAN only, e.g.:
      sudo ufw allow from 192.168.0.0/16 to any port $port proto tcp
    No trusted LAN? Keep SUPERTONIC_HOST=127.0.0.1 here and use an SSH tunnel instead
-   (see docs/builder.md, "Forwarding over an SSH tunnel").
+   (see docs/builder.md, "Forwarding builds > Over an SSH tunnel").
 MSG

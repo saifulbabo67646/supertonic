@@ -74,7 +74,7 @@ Write-Host "   SUPERTONIC_BUILDER_API_KEY=$key"
 Write-Host ''
 Write-Host '   Then start the builder with scripts\serve.ps1.'
 Write-Host '   No trusted LAN? Keep SUPERTONIC_HOST=127.0.0.1 here and use an SSH tunnel instead'
-Write-Host '   (see docs/builder.md, "Forwarding over an SSH tunnel").'
+Write-Host '   (see docs/builder.md, "Forwarding builds > Over an SSH tunnel").'
 Write-Host ''
 if ($OpenFirewall) {
     Write-Host "== Opening TCP $Port for Private networks"
