@@ -43,7 +43,12 @@ async def test_errors(client: AsyncClient) -> None:
         r = await client.post("/v1/tts/timestamps", json={"text": "Hi.", "voice": "F1", **body})
         return r.status_code, r.json()["error"]["code"]
 
-    assert await post(response_format="flac") == (400, "invalid_response_format")
+    # Validated by the schema (Literal), like /v1/audio/speech: invalid_request + param.
+    r = await client.post(
+        "/v1/tts/timestamps", json={"text": "Hi.", "voice": "F1", "response_format": "flac"}
+    )
+    assert r.status_code == 400 and r.json()["error"]["param"] == "response_format"
+    assert r.json()["error"]["code"] == "invalid_request"
     assert await post(voice="nope") == (404, "voice_not_found")
     assert (await post(language="xx"))[0] == 400
     assert await post(speed=5) == (400, "invalid_speed")

@@ -315,3 +315,18 @@ async def test_render_chunks_share_the_joined_buffer(engine: Engine, style: Styl
     assert all(np.shares_memory(c.audio, audio) for c in chunks)
     gap = int(DEFAULT_SILENCE_DURATION * engine.sample_rate)
     assert len(audio) == sum(len(c.audio) for c in chunks) + 2 * gap
+
+
+def test_public_validators() -> None:
+    """One speed/steps validator, shared by the engine and the realtime parameters (M4)."""
+    from supertonic_server.api.realtime import params
+    from supertonic_server.engine import validate_speed, validate_steps
+
+    assert validate_speed(0.7) == 0.7 and validate_steps(100) == 100
+    with pytest.raises(ApiError) as e:
+        validate_speed(2.01)
+    assert e.value.code == "invalid_speed"
+    with pytest.raises(ApiError) as e:
+        validate_steps(0)
+    assert e.value.code == "invalid_total_steps"
+    assert params.validate_speed is validate_speed and not hasattr(params, "check_speed")

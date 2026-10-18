@@ -1,6 +1,6 @@
 """Synthesis engine: model interface, priority scheduler and sentence streaming."""
 
-from supertonic_server.engine.engine import Chunk, Engine
+from supertonic_server.engine.engine import Chunk, Engine, validate_speed, validate_steps
 from supertonic_server.engine.model import SynthModel, TextProcessor, load_engine
 from supertonic_server.engine.scheduler import (
     PRIORITY_DEFAULT,
@@ -19,4 +19,6 @@ __all__ = [
     "SynthModel",
     "TextProcessor",
     "load_engine",
+    "validate_speed",
+    "validate_steps",
 ]

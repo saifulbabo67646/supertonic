@@ -178,7 +178,8 @@ class Engine:
         return np.ascontiguousarray(wav[0, :n], dtype=np.float32)
 
 
-def _validate(speed: float, steps: int) -> None:
+def validate_speed(speed: float) -> float:
+    """Return ``speed`` or raise 400 ``invalid_speed`` when outside 0.7-2.0 (never clamped)."""
     if not MIN_SPEED <= speed <= MAX_SPEED:
         raise ApiError(
             400,
@@ -186,6 +187,11 @@ def _validate(speed: float, steps: int) -> None:
             f"speed must be between {MIN_SPEED} and {MAX_SPEED}, got {speed}",
             param="speed",
         )
+    return speed
+
+
+def validate_steps(steps: int) -> int:
+    """Return ``steps`` or raise 400 ``invalid_total_steps`` when outside 1-100."""
     if not MIN_STEPS <= steps <= MAX_STEPS:
         raise ApiError(
             400,
@@ -193,6 +199,12 @@ def _validate(speed: float, steps: int) -> None:
             f"total_steps must be between {MIN_STEPS} and {MAX_STEPS}, got {steps}",
             param="total_steps",
         )
+    return steps
+
+
+def _validate(speed: float, steps: int) -> None:
+    validate_speed(speed)
+    validate_steps(steps)
 
 
 async def _cancel_all(tasks: list[asyncio.Task[np.ndarray]]) -> None:

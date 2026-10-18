@@ -7,7 +7,8 @@ from typing import TYPE_CHECKING
 
 from supertonic_server.audio import ALLOWED_RATES
 from supertonic_server.core.errors import ApiError
-from supertonic_server.engine.engine import DEFAULT_SPEED, MAX_SPEED, MIN_SPEED
+from supertonic_server.engine import validate_speed
+from supertonic_server.engine.engine import DEFAULT_SPEED
 from supertonic_server.text import get_language
 
 if TYPE_CHECKING:
@@ -45,7 +46,7 @@ class Voicing:
         if patch.language is not None:
             out = replace(out, language=get_language(patch.language).code)
         if patch.speed is not None:
-            out = replace(out, speed=check_speed(patch.speed))
+            out = replace(out, speed=validate_speed(patch.speed))
         return out
 
 
@@ -56,18 +57,6 @@ class ConnectParams:
     voicing: Voicing
     sample_rate: int
     max_partial_length: int
-
-
-def check_speed(speed: float) -> float:
-    """Return ``speed`` or raise 400 ``invalid_speed`` when outside 0.7-2.0."""
-    if not MIN_SPEED <= speed <= MAX_SPEED:
-        raise ApiError(
-            400,
-            "invalid_speed",
-            f"speed must be between {MIN_SPEED} and {MAX_SPEED}, got {speed}",
-            param="speed",
-        )
-    return speed
 
 
 def _number(query: QueryParams, name: str, default: str, kind: type[float] | type[int]) -> float:
@@ -91,7 +80,7 @@ def parse_params(query: QueryParams, state: AppState) -> ConnectParams:
     library = state.library
     vid = library.resolve(query.get("voice") or state.settings.default_voice).id
     language = get_language(query.get("language", "en")).code
-    speed = check_speed(_number(query, "speed", str(DEFAULT_SPEED), float))
+    speed = validate_speed(_number(query, "speed", str(DEFAULT_SPEED), float))
     rate = int(_number(query, "sample_rate", str(DEFAULT_SAMPLE_RATE), int))
     if rate not in ALLOWED_RATES:
         raise ApiError(

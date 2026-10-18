@@ -33,7 +33,7 @@ class TimestampsRequest(BaseModel):
     language: str = "en"
     speed: float = DEFAULT_SPEED
     total_steps: int = DEFAULT_STEPS
-    response_format: str = "wav"
+    response_format: Literal["wav", "mp3"] = "wav"
 
 
 class TimedText(BaseModel):
