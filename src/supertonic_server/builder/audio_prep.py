@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import tempfile
 import wave
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -21,9 +22,11 @@ MIN_SPEECH_S = 3.0
 MAX_SPEECH_S = 60.0
 MAX_SILENCE_RATIO = 0.7
 GAP_S = 0.3
+MAX_DECODE_S = 600.0
 PEAK_DBFS = -1.0
 _DECODE_TIMEOUT_S = 120
 _STDERR_TAIL = 200
+_NAME_MAX = 100
 
 
 @dataclass(frozen=True)
@@ -40,38 +43,47 @@ def _invalid(message: str) -> ApiError:
     return ApiError(400, "invalid_reference_audio", message, param="files")
 
 
-def _decode(name: str, data: bytes) -> np.ndarray:
-    """Decode ``data`` to mono float32 at 44.1 kHz via ffmpeg (bytes in, bytes out)."""
-    cmd = [
-        imageio_ffmpeg.get_ffmpeg_exe(),
-        "-nostdin",
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-i",
-        "pipe:0",
-        "-vn",
-        "-ac",
-        "1",
-        "-ar",
-        str(NATIVE_RATE),
-        "-f",
-        "f32le",
-        "pipe:1",
-    ]
+def _label(name: str) -> str:
+    """Client file name, truncated for echoing in messages."""
+    return name if len(name) <= _NAME_MAX else name[:_NAME_MAX] + "..."
+
+
+def _decode(index: int, name: str, data: bytes) -> np.ndarray:
+    """Decode ``data`` to mono float32 at 44.1 kHz via ffmpeg.
+
+    The bytes go to a private temp file (named by us, never from ``name``) because formats such
+    as m4a keep their index at the end and cannot be read from a pipe.
+    """
+    label = _label(name)
     try:
-        proc = subprocess.run(
-            cmd, input=data, capture_output=True, timeout=_DECODE_TIMEOUT_S, check=False
-        )
-    except subprocess.TimeoutExpired:
-        raise _invalid(f"{name}: decoding timed out") from None
-    except OSError as exc:
-        raise _invalid(f"{name}: audio decoder unavailable ({exc})") from None
+        exe = imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception as exc:
+        raise ApiError(
+            500, "internal_error", f"audio decoder unavailable: {exc}", type_="server_error"
+        ) from None
+    with tempfile.TemporaryDirectory(prefix="supertonic-ref-") as tmp:
+        src = Path(tmp) / f"ref-{index}"
+        src.write_bytes(data)
+        cmd = [
+            exe, "-nostdin", "-hide_banner", "-loglevel", "error",
+            "-i", str(src), "-vn", "-t", str(MAX_DECODE_S),
+            "-ac", "1", "-ar", str(NATIVE_RATE), "-f", "f32le", "pipe:1",
+        ]  # fmt: skip
+        try:
+            proc = subprocess.run(cmd, capture_output=True, timeout=_DECODE_TIMEOUT_S, check=False)
+        except subprocess.TimeoutExpired:
+            raise _invalid(f"{label}: decoding timed out") from None
+        except OSError as exc:
+            raise ApiError(
+                500, "internal_error", f"audio decoder unavailable: {exc}", type_="server_error"
+            ) from None
     if proc.returncode != 0 or len(proc.stdout) < 4:
         tail = proc.stderr.decode("utf-8", "replace").strip()[-_STDERR_TAIL:]
-        raise _invalid(f"{name}: not decodable audio" + (f" ({tail})" if tail else ""))
+        raise _invalid(f"{label}: not decodable audio" + (f" ({tail})" if tail else ""))
     usable = len(proc.stdout) // 4 * 4
     audio = np.frombuffer(proc.stdout[:usable], dtype="<f4").astype(np.float32)
+    if len(audio) >= MAX_DECODE_S * NATIVE_RATE:
+        raise _invalid(f"{label}: longer than {MAX_DECODE_S / 60:g} minutes")
     return np.nan_to_num(audio, nan=0.0, posinf=0.0, neginf=0.0)
 
 
@@ -106,7 +118,7 @@ def prepare_reference(files: Sequence[tuple[str, bytes]], out_path: Path) -> Pre
     pieces: list[np.ndarray] = []
     speech_frames = total_frames = 0
     for i, (name, data) in enumerate(files):
-        audio = _decode(name, data)
+        audio = _decode(i, name, data)
         start, end = speech_bounds(audio, NATIVE_RATE)
         audio = audio[start:end]
         loud, frames = _speech_frames(audio)
