@@ -116,6 +116,7 @@ ignore_missing_imports = true
 # installed (CI) and typed when it is: allow Any to flow and keep both setups clean.
 [[tool.mypy.overrides]]
 module = [
+  "supertonic_server.builder.extract.accurate.*",
   "supertonic_server.builder.extract.common.*",
   "supertonic_server.builder.extract.fast.*",
 ]

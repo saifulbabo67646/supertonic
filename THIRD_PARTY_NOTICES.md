@@ -49,8 +49,16 @@ the licence you need.
   TLS-verification bypass was not vendored.
 - **supertonic3-voice-clone** by Saurabh Verma, MIT License,
   <https://github.com/saurabhv749/supertonic3-voice-clone> at
-  `765ce5e27daa8d30937e2d0d8f9730280add5748`: the ONNX-to-PyTorch loading fixes (Clip
-  inputs, in-memory shape inference) in `builder/extract/common/frozen_tts.py`.
+  `765ce5e27daa8d30937e2d0d8f9730280add5748` (its `train_style.py` is a modified version
+  of Gyeongmin Kim's `optimize_style.py`, MIT): the `accurate` build method in
+  `src/supertonic_server/builder/extract/accurate/` (speaker-similarity loss, the
+  optimisation loop and its settings, and the 16 training sentences from
+  `configs/utterances.py`, verbatim) and the ONNX-to-PyTorch loading fixes (Clip inputs,
+  in-memory shape inference) in `builder/extract/common/frozen_tts.py`. Each file's header
+  says what changed. Full licence text and upstream's NOTICE:
+  `src/supertonic_server/builder/extract/LICENSE-supertonic3-voice-clone` and
+  `NOTICE-supertonic3-voice-clone`. Upstream's TLS-verification bypass and its removal of
+  certificate environment variables were not vendored.
 
 ## Builder extra (optional, `uv sync --extra builder`)
 
@@ -65,6 +73,12 @@ Model weights downloaded on first build, not redistributed here:
 
 - **WavLM-Large** (`microsoft/wavlm-large`, ~1.2 GB), used by the `fast` method. Licence:
   see <https://huggingface.co/microsoft/wavlm-large> (the WavLM code is MIT).
+- **ECAPA-TDNN speaker encoder** (`speechbrain/spkrec-ecapa-voxceleb`, ~80 MB), trained by
+  SpeechBrain on VoxCeleb, used by the `accurate` method through the **SpeechBrain**
+  toolkit (Apache-2.0, <https://speechbrain.github.io/>). The model is published under
+  Apache-2.0: <https://huggingface.co/speechbrain/spkrec-ecapa-voxceleb>. It is fetched
+  into `<Hugging Face hub cache>/supertonic-ecapa` (e.g.
+  `~/.cache/huggingface/hub/supertonic-ecapa`) as plain copies, not symlinks.
 
 ## Acknowledgements and related work (not dependencies)
 

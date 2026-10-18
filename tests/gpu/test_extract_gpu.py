@@ -91,3 +91,83 @@ async def test_fast_builds_a_usable_voice(tts: Any, luna: Path, tmp_path: Path) 
     assert chunks
     assert np.isfinite(audio).all()
     assert float(np.abs(audio).max()) > 0.01
+
+
+ACCURATE_GPU_STEPS = "200"  # a full build is 3000 steps (~90 min); 200 shows the descent
+
+
+def _assert_valid_style(style: dict[str, Any], tmp_path: Path, model_dir: Path) -> None:
+    for key, dims in (("style_ttl", [1, 50, 256]), ("style_dp", [1, 8, 16])):
+        assert style[key]["dims"] == dims
+        arr = np.asarray(style[key]["data"], dtype=np.float32)
+        assert list(arr.shape) == dims
+        assert np.isfinite(arr).all()
+    library = VoiceLibrary(model_dir / "voice_styles", tmp_path / "custom")
+    library.import_style(json.loads(json.dumps(style)), "Luna", source_note="gpu test")
+
+
+def _preset_dp(model_dir: Path, name: str) -> np.ndarray:
+    doc = json.loads((model_dir / "voice_styles" / f"{name}.json").read_text(encoding="utf-8"))
+    return np.asarray(doc["style_dp"]["data"], dtype=np.float32)
+
+
+def test_accurate_builds_a_closer_voice(
+    tts: Any, luna: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import torch
+
+    assert torch.cuda.is_available(), "the gpu test needs CUDA"
+    monkeypatch.setenv("SUPERTONIC_BUILDER_ACCURATE_STEPS", ACCURATE_GPU_STEPS)
+    model_dir = Path(tts.model_dir)
+    torch.cuda.reset_peak_memory_stats()
+    events: list[Progress] = []
+    started = time.monotonic()
+    style, report = extract_style(
+        "accurate", luna, model_dir, on_progress=events.append, should_stop=lambda: False
+    )
+    minutes = (time.monotonic() - started) / 60
+    peak_gb = torch.cuda.max_memory_allocated() / 2**30
+    print(f"\naccurate: {minutes:.1f} min, peak VRAM {peak_gb:.2f} GB, report {json.dumps(report)}")
+
+    assert report["method"] == "accurate"
+    assert report["preset_start"] in {f"{g}{i}" for g in "FM" for i in range(1, 6)}
+    assert report["loss"] < report["preset_distance"]
+    assert report["similarity"] == pytest.approx(1 - report["loss"], abs=1e-3)
+    assert report["stopped_early"] is False
+    assert 1 <= report["steps"] <= int(ACCURATE_GPU_STEPS)
+    presets = [e for e in events if e.stage == "preset"]
+    assert len(presets) == 10 and all(e.loss is not None for e in presets)
+    timbre = [e for e in events if e.stage == "timbre"]
+    assert timbre and all(e.total == int(ACCURATE_GPU_STEPS) for e in timbre)
+    assert [e.step for e in timbre[:2]] == [8, 16]
+    assert any(e.stage == "duration" for e in events)
+
+    _assert_valid_style(style, tmp_path, model_dir)
+    dp = np.asarray(style["style_dp"]["data"], dtype=np.float32)
+    assert not np.allclose(dp, _preset_dp(model_dir, report["preset_start"]))
+
+
+def test_accurate_finish_now_saves_best_so_far(
+    tts: Any, luna: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SUPERTONIC_BUILDER_ACCURATE_STEPS", ACCURATE_GPU_STEPS)
+    stop_file = tmp_path / "STOP"
+    events: list[Progress] = []
+
+    def on_progress(p: Progress) -> None:
+        events.append(p)
+        if p.stage == "timbre":
+            stop_file.touch()  # what POST /v1/jobs/{id}/finish does
+
+    style, report = extract_style(
+        "accurate",
+        luna,
+        Path(tts.model_dir),
+        on_progress=on_progress,
+        should_stop=stop_file.exists,
+    )
+    print(f"\naccurate (finish now): report {json.dumps(report)}")
+    assert report["stopped_early"] is True
+    assert report["steps"] == 8
+    assert report["duration_status"] == "stopped"
+    _assert_valid_style(style, tmp_path, Path(tts.model_dir))

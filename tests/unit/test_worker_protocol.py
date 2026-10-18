@@ -8,6 +8,7 @@ import subprocess
 import sys
 from dataclasses import fields
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
@@ -296,15 +297,29 @@ def test_extractor_exceptions_map_to_error_codes(
     assert not job["out"].exists()
 
 
-def test_dispatcher_accurate_is_not_implemented_yet(tmp_path: Path) -> None:
-    with pytest.raises(NotImplementedError):
-        extract_style(
-            "accurate",
-            tmp_path / "ref.wav",
-            tmp_path,
-            on_progress=lambda p: None,
-            should_stop=lambda: False,
-        )
+@pytest.mark.parametrize("method", ["accurate", "fast"])
+def test_dispatcher_runs_the_method_module(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, method: str
+) -> None:
+    """Each method is imported lazily from its own subpackage (stubbed: no torch needed)."""
+    calls: list[dict[str, Any]] = []
+
+    def fake(wav_path: Path, model_dir: Path, **kwargs: Any) -> tuple[dict[str, Any], dict]:
+        calls.append({"wav": wav_path, "model": model_dir, **kwargs})
+        return {"style": method}, {"method": method}
+
+    module = SimpleNamespace(extract_style=fake)
+    monkeypatch.setitem(sys.modules, f"supertonic_server.builder.extract.{method}.extract", module)
+    style, report = extract_style(
+        method,  # type: ignore[arg-type]
+        tmp_path / "ref.wav",
+        tmp_path,
+        on_progress=lambda p: None,
+        should_stop=lambda: False,
+        device="cpu",
+    )
+    assert (style, report) == ({"style": method}, {"method": method})
+    assert calls[0]["wav"] == tmp_path / "ref.wav" and calls[0]["device"] == "cpu"
 
 
 def test_dispatcher_rejects_unknown_method(tmp_path: Path) -> None:

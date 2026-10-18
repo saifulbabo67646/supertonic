@@ -44,7 +44,16 @@ logger = logging.getLogger("supertonic_server.builder.worker")
 FAKE_ENV = "SUPERTONIC_BUILDER_FAKE"
 # Third-party modules each method needs beyond torch (import names).
 METHOD_DEPS: dict[BuildMethod, tuple[str, ...]] = {
-    "accurate": ("onnx", "onnxslim", "onnx2torch", "soundfile", "librosa", "speechbrain"),
+    "accurate": (
+        "onnx",
+        "onnxslim",
+        "onnx2torch",
+        "torchaudio",
+        "soundfile",
+        "librosa",
+        "scipy",
+        "speechbrain",
+    ),
     "fast": ("onnx", "onnxslim", "onnx2torch", "soundfile", "librosa", "scipy", "transformers"),
 }
 

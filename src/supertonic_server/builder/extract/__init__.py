@@ -8,8 +8,8 @@ Vendored upstreams (MIT, adapted; see the file headers and ``THIRD_PARTY_NOTICES
 
 - ``fast`` and the shared duration inversion: supertonic.embed by Gyeongmin Kim,
   :data:`EMBED_UPSTREAM` at :data:`EMBED_SHA`.
-- ``common.frozen_tts`` ONNX-to-torch loading also follows supertonic3-voice-clone by
-  Saurabh Verma, :data:`VC3_UPSTREAM` at :data:`VC3_SHA`.
+- ``accurate`` and the ONNX-to-torch fixes in ``common.frozen_tts``: supertonic3-voice-clone
+  by Saurabh Verma, :data:`VC3_UPSTREAM` at :data:`VC3_SHA`.
 """
 
 from __future__ import annotations
@@ -56,17 +56,20 @@ def extract_style(
     Returns:
         ``(style_json, report)``: the style in the shipped JSON format and a report with
         ``method, preset_start, preset_distance, loss, steps, duration_status, rate_ref,
-        rate_final, stopped_early``.
+        rate_final, stopped_early`` (``accurate`` adds ``similarity`` and ``best_step``).
 
     Raises:
         ValueError: ``method`` is not a known build method.
-        NotImplementedError: ``accurate`` is not available yet.
         NothingToSaveError: stopped before any style existed.
     """
     if method not in BUILD_METHODS:
         raise ValueError(f"unknown build method {method!r}")
     if method == "accurate":
-        raise NotImplementedError("the accurate build method is not implemented yet")
+        from supertonic_server.builder.extract.accurate.extract import extract_style as accurate
+
+        return accurate(
+            wav_path, model_dir, on_progress=on_progress, should_stop=should_stop, device=device
+        )
     from supertonic_server.builder.extract.fast.extract import extract_style as fast
 
     return fast(
