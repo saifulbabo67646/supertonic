@@ -23,6 +23,22 @@ dependencies = [
   "python-multipart",
 ]
 
+[project.optional-dependencies]
+# Local voice building (CUDA GPU recommended). Only the builder worker process imports these.
+builder = [
+  "torch==2.9.1",
+  "torchaudio==2.9.1",
+  "torchvision==0.24.1", # onnx2torch needs it; pinned so it comes from the same CUDA index
+  "onnx",
+  "onnx2torch",
+  "onnxslim",
+  "librosa",
+  "scipy",
+  "soundfile",
+  "transformers",
+  "speechbrain",
+]
+
 [project.scripts]
 supertonic-server = "supertonic_server.cli:main"
 supertonic-mcp = "supertonic_server.mcp.server:main"
@@ -30,14 +46,31 @@ supertonic-mcp = "supertonic_server.mcp.server:main"
 [dependency-groups]
 dev = ["pytest", "pytest-asyncio", "ruff", "mypy", "pre-commit", "openai", "httpx"]
 
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu126", marker = "sys_platform == 'win32' or sys_platform == 'linux'" }]
+torchaudio = [
+  { index = "pytorch-cu126", marker = "sys_platform == 'win32' or sys_platform == 'linux'" },
+]
+torchvision = [
+  { index = "pytorch-cu126", marker = "sys_platform == 'win32' or sys_platform == 'linux'" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/supertonic_server"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-addopts = "-m 'not model'"
-markers = ["model: needs real Supertonic weights"]
+addopts = "-m 'not model and not gpu'"
+markers = [
+  "model: needs real Supertonic weights",
+  "gpu: needs a CUDA GPU, the builder extra and real weights",
+]
 
 [tool.ruff]
 line-length = 100
@@ -54,3 +87,36 @@ files = ["src"]
 [[tool.mypy.overrides]]
 module = ["supertonic", "supertonic.*", "soxr", "imageio_ffmpeg"]
 ignore_missing_imports = true
+
+# Builder-only dependencies: untyped, and absent unless the `builder` extra is installed.
+[[tool.mypy.overrides]]
+module = [
+  "torch",
+  "torch.*",
+  "torchaudio",
+  "torchaudio.*",
+  "onnx",
+  "onnx.*",
+  "onnx2torch",
+  "onnx2torch.*",
+  "onnxslim",
+  "librosa",
+  "librosa.*",
+  "scipy",
+  "scipy.*",
+  "soundfile",
+  "transformers",
+  "transformers.*",
+  "speechbrain",
+  "speechbrain.*",
+]
+ignore_missing_imports = true
+
+# The extractors are numeric code over torch, which is `Any` when the extra is not
+# installed (CI) and typed when it is: allow Any to flow and keep both setups clean.
+[[tool.mypy.overrides]]
+module = ["supertonic_server.builder.extract.*"]
+warn_return_any = false
+disallow_subclassing_any = false
+disallow_any_generics = false
+warn_unused_ignores = false
