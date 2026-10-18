@@ -3,8 +3,8 @@
 # Copyright (c) 2026 Gyeongmin Kim. MIT License (see LICENSE-supertonic-embed).
 # Adapted: one speaker at a time (`batch: 1`), so the batch queue is gone; a `max_steps`
 # bound; progress through a callback every `progress_every` steps; a stop check polled
-# every step that keeps the best vector so far; the nearest-preset scan reports each
-# preset and can be stopped; typed. The descent itself is unchanged.
+# every step that keeps the best vector so far; the nearest-preset scan moved to
+# common/preset_scan.py; typed. The descent itself is unchanged.
 """Recover the timbre style by gradient descent on the WavLM objective.
 
 Start at the nearest shipped preset, descend, and after every step put all 50 rows back
@@ -15,14 +15,13 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 import torch
 
 from supertonic_server.builder.extract.base import ProgressCallback, StopCheck, progress
 from supertonic_server.builder.extract.common.frozen_tts import FrozenTTS, Prompt
-from supertonic_server.builder.extract.common.style_file import load_style, project_to_sphere
+from supertonic_server.builder.extract.common.style_file import project_to_sphere
 from supertonic_server.builder.extract.fast.config import TimbreConfig
 from supertonic_server.builder.extract.fast.wavlm_loss import (
     Stats,
@@ -41,39 +40,6 @@ class TimbreResult:
     steps: int  # steps to the best loss
     taken: int  # steps run
     stopped: bool  # ended by the stop check
-
-
-def nearest_preset(
-    target: Stats,
-    presets: Sequence[Path],
-    prompt: Prompt,
-    tts: FrozenTTS,
-    wavlm: Any,
-    layer: int,
-    *,
-    on_progress: ProgressCallback,
-    should_stop: StopCheck,
-) -> tuple[Path, float, bool] | None:
-    """``(preset, distance, stopped)`` of the closest preset under the objective.
-
-    ``None`` when stopped before any preset was measured.
-    """
-    best: tuple[Path, float] | None = None
-    for i, path in enumerate(presets, 1):
-        if should_stop():
-            return None if best is None else (*best, True)
-        ttl, _ = load_style(path, tts.device)
-        wav = tts.synthesize(prompt, ttl)
-        with torch.no_grad():
-            distance = style_loss(layer_stats(wavlm, to_wavlm_rate(wav), layer), target).item()
-        if best is None or distance < best[1]:
-            best = (path, distance)
-        on_progress(
-            progress(
-                "preset", f"{path.stem}: {distance:.4f}", step=i, total=len(presets), loss=distance
-            )
-        )
-    return None if best is None else (*best, False)
 
 
 def invert(

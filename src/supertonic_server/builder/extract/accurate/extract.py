@@ -18,11 +18,7 @@ from pathlib import Path
 import torch
 
 from supertonic_server.builder.extract.accurate.config import AccurateConfig, config_from_env
-from supertonic_server.builder.extract.accurate.optimize import (
-    nearest_preset,
-    optimise,
-    training_prompts,
-)
+from supertonic_server.builder.extract.accurate.optimize import optimise, training_prompts
 from supertonic_server.builder.extract.accurate.speaker_loss import (
     SpeakerLoss,
     load_ecapa,
@@ -36,20 +32,17 @@ from supertonic_server.builder.extract.base import (
     StopCheck,
     StyleJson,
     check_stop,
-    make_report,
     progress,
 )
 from supertonic_server.builder.extract.common import (
     check_readable,
-    duration_inversion,
+    finish_with_duration,
     list_presets,
     load_frozen_tts,
-    load_mono,
     load_style,
+    nearest_preset,
     preset_path,
-    style_to_json,
 )
-from supertonic_server.builder.extract.common.duration import RATE_SR
 
 logger = logging.getLogger(__name__)
 
@@ -109,31 +102,22 @@ def extract_style(
     if dev.type == "cuda":
         torch.cuda.empty_cache()
 
-    on_progress(
-        progress(
-            "duration", "matching the reference speaking rate", step=0, total=cfg.duration.max_iters
-        )
-    )
-    duration_prompts = tts.build_prompts(cfg.duration_prompts, dp)
-    dp, duration = duration_inversion(
-        load_mono(wav_path, RATE_SR),
+    loss = round(timbre.loss, 4)  # as the report rounds it, so similarity matches exactly
+    return finish_with_duration(
+        "accurate",
+        wav_path,
         timbre.ttl,
         dp,
-        duration_prompts,
+        tts.build_prompts(cfg.duration_prompts, dp),
         tts,
         cfg.duration,
         on_progress=on_progress,
         should_stop=should_stop,
-    )
-    report = make_report(
-        "accurate",
         preset_start=path.stem,
         preset_distance=preset_loss,
-        loss=timbre.loss,
+        loss=loss,
         steps=timbre.taken,
-        duration=duration,
         stopped_early=preset_stopped or timbre.stopped,
-        similarity=round(1 - timbre.loss, 4),
+        similarity=round(1 - loss, 4),
         best_step=timbre.best_step,
     )
-    return style_to_json(timbre.ttl, dp, source=Path(wav_path).name), report

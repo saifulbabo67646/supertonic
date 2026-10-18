@@ -22,10 +22,11 @@ import soundfile as sf  # noqa: E402
 from supertonic_server.builder import Progress  # noqa: E402
 from supertonic_server.builder.extract.base import NothingToSaveError  # noqa: E402
 from supertonic_server.builder.extract.common.duration import duration_inversion  # noqa: E402
+from supertonic_server.builder.extract.common.preset_scan import nearest_preset  # noqa: E402
 from supertonic_server.builder.extract.duration_config import DurationConfig  # noqa: E402
 from supertonic_server.builder.extract.fast import extract as fast_extract  # noqa: E402
 from supertonic_server.builder.extract.fast.config import TimbreConfig  # noqa: E402
-from supertonic_server.builder.extract.fast.invert_ttl import invert, nearest_preset  # noqa: E402
+from supertonic_server.builder.extract.fast.invert_ttl import invert  # noqa: E402
 from supertonic_server.builder.extract.fast.wavlm_loss import (  # noqa: E402
     layer_stats,
     style_loss,
@@ -153,12 +154,10 @@ def presets(tmp_path: Path) -> list[Path]:
 def _scan(presets: list[Path], stop: StopAfter) -> tuple[Any, list[Progress]]:
     events: list[Progress] = []
     found = nearest_preset(
-        ZERO_TARGET,
         presets,
         PROMPT,  # type: ignore[arg-type]
         StubTTS(),  # type: ignore[arg-type]
-        _wavlm,
-        LAYER,
+        lambda wav: style_loss(layer_stats(_wavlm, to_wavlm_rate(wav), LAYER), ZERO_TARGET),
         on_progress=events.append,
         should_stop=stop,
     )

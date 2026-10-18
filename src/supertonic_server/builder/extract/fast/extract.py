@@ -20,22 +20,24 @@ from supertonic_server.builder.extract.base import (
     StopCheck,
     StyleJson,
     check_stop,
-    make_report,
     progress,
 )
 from supertonic_server.builder.extract.common import (
     check_readable,
-    duration_inversion,
+    finish_with_duration,
     list_presets,
     load_frozen_tts,
-    load_mono,
     load_style,
+    nearest_preset,
     preset_path,
-    style_to_json,
 )
-from supertonic_server.builder.extract.fast.config import WAVLM_SR, FastConfig
-from supertonic_server.builder.extract.fast.invert_ttl import invert, nearest_preset
-from supertonic_server.builder.extract.fast.wavlm_loss import load_wavlm, target_from_file
+from supertonic_server.builder.extract.fast.config import FastConfig
+from supertonic_server.builder.extract.fast.invert_ttl import invert
+from supertonic_server.builder.extract.fast.wavlm_loss import (
+    load_wavlm,
+    objective,
+    target_from_file,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -72,12 +74,10 @@ def extract_style(
     target = target_from_file(wavlm, wav_path, cfg.timbre.layer, dev)
 
     chosen = nearest_preset(
-        target,
         presets,
         prompts[0],
         tts,
-        wavlm,
-        cfg.timbre.layer,
+        objective(wavlm, cfg.timbre.layer, target),
         on_progress=on_progress,
         should_stop=should_stop,
     )
@@ -102,14 +102,9 @@ def extract_style(
     if dev.type == "cuda":
         torch.cuda.empty_cache()
 
-    on_progress(
-        progress(
-            "duration", "matching the reference speaking rate", step=0, total=cfg.duration.max_iters
-        )
-    )
-    reference16 = load_mono(wav_path, WAVLM_SR)
-    dp, duration = duration_inversion(
-        reference16,
+    return finish_with_duration(
+        "fast",
+        wav_path,
         timbre.ttl,
         dp,
         prompts,
@@ -117,14 +112,9 @@ def extract_style(
         cfg.duration,
         on_progress=on_progress,
         should_stop=should_stop,
-    )
-    report = make_report(
-        "fast",
         preset_start=path.stem,
         preset_distance=distance,
         loss=timbre.loss,
         steps=timbre.steps,
-        duration=duration,
         stopped_early=preset_stopped or timbre.stopped,
     )
-    return style_to_json(timbre.ttl, dp, source=Path(wav_path).name), report

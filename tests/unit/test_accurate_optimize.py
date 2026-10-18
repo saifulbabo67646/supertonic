@@ -1,4 +1,4 @@
-"""The ``accurate`` optimiser, preset scan, prompts and speaker loss on CPU with stand-ins.
+"""The ``accurate`` descent, the shared preset scan and the training prompts, on CPU.
 
 Runs wherever the ``builder`` extra is installed (no GPU, no weights); skipped otherwise.
 """
@@ -17,18 +17,13 @@ torch = pytest.importorskip("torch")
 for _dep in ("torchaudio", "librosa", "scipy", "soundfile", "onnx2torch", "onnxslim"):
     pytest.importorskip(_dep)
 
-import soundfile as sf  # noqa: E402
-
 from supertonic_server.builder import Progress  # noqa: E402
-from supertonic_server.builder.extract.accurate import extract as accurate_extract  # noqa: E402
 from supertonic_server.builder.extract.accurate.config import AccurateConfig  # noqa: E402
 from supertonic_server.builder.extract.accurate.optimize import (  # noqa: E402
-    nearest_preset,
     optimise,
     training_prompts,
 )
-from supertonic_server.builder.extract.accurate.speaker_loss import SpeakerLoss  # noqa: E402
-from supertonic_server.builder.extract.base import NothingToSaveError  # noqa: E402
+from supertonic_server.builder.extract.common.preset_scan import nearest_preset  # noqa: E402
 
 SR = 44100
 
@@ -246,93 +241,3 @@ def test_training_prompts_longest_first_with_one_fixed_latent() -> None:
 def test_training_prompts_reject_mixed_languages() -> None:
     with pytest.raises(ValueError, match="one language"):
         training_prompts(TextTTS(), [["en", "a"], ["ko", "b"]], torch.zeros(1, 8, 16), seed=1)  # type: ignore[arg-type]
-
-
-class StubEncoder:
-    """ECAPA stand-in: the embedding is (mean |x|, max |x|, energy) of the 16 kHz signal."""
-
-    def __init__(self) -> None:
-        self.calls = 0
-
-    def encode_batch(self, wavs: Any) -> Any:
-        self.calls += 1
-        a = wavs.abs()
-        return torch.stack([a.mean(), a.amax(), (wavs**2).mean() + 0.1]).reshape(1, 1, 3)
-
-
-def _tone(sr: int, amplitude: float = 0.5) -> Any:
-    t = torch.arange(int(0.5 * sr)) / sr
-    return (amplitude * torch.sin(2 * torch.pi * 220 * t)).reshape(1, -1)
-
-
-def test_speaker_loss_is_one_minus_cosine_with_reference_embedded_once() -> None:
-    encoder = StubEncoder()
-    loss = SpeakerLoss(encoder, _tone(16000), torch.device("cpu"))
-    assert encoder.calls == 1
-    same = loss(_tone(SR))
-    assert float(same) == pytest.approx(0.0, abs=1e-3)
-    generated = (_tone(SR, 0.2) + 0.3).requires_grad_(True)
-    value = loss(generated)
-    value.backward()
-    assert encoder.calls == 3
-    assert 0.0 < float(value.detach()) <= 2.0
-    assert generated.grad is not None and torch.isfinite(generated.grad).all()
-    ref = torch.nn.functional.normalize(StubEncoder().encode_batch(_tone(16000)).reshape(-1), dim=0)
-    resampled = loss.resample(generated.detach())
-    gen = torch.nn.functional.normalize(StubEncoder().encode_batch(resampled).reshape(-1), dim=0)
-    assert float(value.detach()) == pytest.approx(1 - float(ref @ gen), abs=1e-5)
-
-
-def _model_dir(tmp_path: Path) -> Path:
-    model = tmp_path / "model"
-    (model / "voice_styles").mkdir(parents=True)
-    _write_style(model / "voice_styles" / "F1.json", [1.0])
-    return model
-
-
-def _wav(tmp_path: Path) -> Path:
-    path = tmp_path / "ref.wav"
-    sf.write(str(path), _tone(SR).reshape(-1).numpy(), SR)
-    return path
-
-
-def test_stop_while_loading_is_nothing_to_save(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    def no_ecapa(device: Any) -> Any:
-        raise AssertionError("ECAPA must not load after a stop")
-
-    monkeypatch.setattr(accurate_extract, "load_frozen_tts", lambda *a, **k: object())
-    monkeypatch.setattr(accurate_extract, "load_ecapa", no_ecapa)
-    events: list[Progress] = []
-    with pytest.raises(NothingToSaveError):
-        accurate_extract.extract_style(
-            _wav(tmp_path),
-            _model_dir(tmp_path),
-            on_progress=events.append,
-            should_stop=lambda: True,
-            device="cpu",
-        )
-    assert [e.stage for e in events] == ["loading"]
-
-
-@pytest.mark.parametrize("content", [None, b"not audio at all"])
-def test_rejects_bad_wav_before_loading_models(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, content: bytes | None
-) -> None:
-    def no_load(*args: Any, **kwargs: Any) -> Any:
-        raise AssertionError("models must not load for a bad reference")
-
-    monkeypatch.setattr(accurate_extract, "load_frozen_tts", no_load)
-    monkeypatch.setattr(accurate_extract, "load_ecapa", no_load)
-    wav = tmp_path / "ref.wav"
-    if content is not None:
-        wav.write_bytes(content)
-    with pytest.raises((FileNotFoundError, ValueError)):
-        accurate_extract.extract_style(
-            wav,
-            _model_dir(tmp_path),
-            on_progress=lambda p: None,
-            should_stop=lambda: False,
-            device="cpu",
-        )

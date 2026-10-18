@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -56,6 +57,7 @@ async def test_fast_builds_a_usable_voice(tts: Any, luna: Path, tmp_path: Path) 
     torch.cuda.reset_peak_memory_stats()
     events: list[Progress] = []
     started = time.monotonic()
+    wall = datetime.now(UTC)
     style, report = extract_style(
         "fast",
         luna,
@@ -66,6 +68,7 @@ async def test_fast_builds_a_usable_voice(tts: Any, luna: Path, tmp_path: Path) 
     minutes = (time.monotonic() - started) / 60
     peak_gb = torch.cuda.max_memory_allocated() / 2**30
     print(f"\nfast: {minutes:.1f} min, peak VRAM {peak_gb:.2f} GB, report {json.dumps(report)}")
+    print(f"fast stages: {_stage_times(wall, events)}")
 
     assert report["method"] == "fast"
     assert report["loss"] < 0.25
@@ -106,6 +109,29 @@ def _assert_valid_style(style: dict[str, Any], tmp_path: Path, model_dir: Path) 
     library.import_style(json.loads(json.dumps(style)), "Luna", source_note="gpu test")
 
 
+def _stage_times(started: datetime, events: list[Progress]) -> str:
+    """Seconds per stage from the progress timestamps (loading includes the first preset)."""
+
+    def at(e: Progress) -> float:
+        return (datetime.fromisoformat(e.at) - started).total_seconds()
+
+    presets = [e for e in events if e.stage == "preset"]
+    timbre = [e for e in events if e.stage == "timbre"]
+    duration = [e for e in events if e.stage == "duration"]
+    end = (datetime.now(UTC) - started).total_seconds()
+    per_preset = (at(presets[-1]) - at(presets[0])) / max(1, len(presets) - 1)
+    load = at(presets[0]) - per_preset
+    steps = (timbre[-1].step or 0) - (timbre[0].step or 0)
+    per_step = (at(timbre[-1]) - at(timbre[0])) / steps if steps else float("nan")
+    timbre_s = at(timbre[-1]) - at(presets[-1])
+    duration_s = end - at(duration[0]) if duration else 0.0
+    return (
+        f"loading {load:.0f} s, preset scan {at(presets[-1]) - load:.0f} s "
+        f"({per_preset:.1f} s/preset), timbre {timbre_s:.0f} s ({per_step:.2f} s/step), "
+        f"duration {duration_s:.0f} s"
+    )
+
+
 def _preset_dp(model_dir: Path, name: str) -> np.ndarray:
     doc = json.loads((model_dir / "voice_styles" / f"{name}.json").read_text(encoding="utf-8"))
     return np.asarray(doc["style_dp"]["data"], dtype=np.float32)
@@ -122,17 +148,21 @@ def test_accurate_builds_a_closer_voice(
     torch.cuda.reset_peak_memory_stats()
     events: list[Progress] = []
     started = time.monotonic()
+    wall = datetime.now(UTC)
     style, report = extract_style(
         "accurate", luna, model_dir, on_progress=events.append, should_stop=lambda: False
     )
     minutes = (time.monotonic() - started) / 60
     peak_gb = torch.cuda.max_memory_allocated() / 2**30
     print(f"\naccurate: {minutes:.1f} min, peak VRAM {peak_gb:.2f} GB, report {json.dumps(report)}")
+    print(f"accurate stages: {_stage_times(wall, events)}")
 
     assert report["method"] == "accurate"
     assert report["preset_start"] in {f"{g}{i}" for g in "FM" for i in range(1, 6)}
+    # As upstream: the best loss is over the rotating training texts, the preset loss is
+    # the scan's on text 0, so the two are on different sentences.
     assert report["loss"] < report["preset_distance"]
-    assert report["similarity"] == pytest.approx(1 - report["loss"], abs=1e-3)
+    assert report["similarity"] == round(1 - report["loss"], 4)
     assert report["stopped_early"] is False
     assert 1 <= report["steps"] <= int(ACCURATE_GPU_STEPS)
     presets = [e for e in events if e.stage == "preset"]
@@ -170,4 +200,6 @@ def test_accurate_finish_now_saves_best_so_far(
     assert report["stopped_early"] is True
     assert report["steps"] == 8
     assert report["duration_status"] == "stopped"
+    assert report["loss"] < report["preset_distance"]  # different texts, as above
+    assert report["similarity"] == round(1 - report["loss"], 4)
     _assert_valid_style(style, tmp_path, Path(tts.model_dir))

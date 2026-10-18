@@ -4,7 +4,7 @@
 # Adapted: upstream's TLS-verification bypass (httpx monkeypatch) and its removal of
 # certificate environment variables are deliberately NOT included; device and layer are
 # arguments; the reference is decoded with soundfile; transformers is imported lazily;
-# typed.
+# typed; `objective` wraps the loss for the shared preset scan.
 """The objective the timbre is inverted against: WavLM layer statistics.
 
 A voice is the mean and standard deviation over time of one WavLM-Large layer. Pooling
@@ -15,6 +15,7 @@ HuggingFace's ``hidden_states[4]`` is that layer.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -56,6 +57,15 @@ def layer_stats(wavlm: Any, wav16: torch.Tensor, layer: int) -> Stats:
 def style_loss(synthesized: Stats, target: Stats) -> torch.Tensor:
     """Mean squared error between two ``(mean, std)`` pairs."""
     return F.mse_loss(synthesized[0], target[0]) + F.mse_loss(synthesized[1], target[1])
+
+
+def objective(wavlm: Any, layer: int, target: Stats) -> Callable[[torch.Tensor], torch.Tensor]:
+    """The loss of one synthesised waveform against ``target`` (for the preset scan)."""
+
+    def loss(wav: torch.Tensor) -> torch.Tensor:
+        return style_loss(layer_stats(wavlm, to_wavlm_rate(wav), layer), target)
+
+    return loss
 
 
 def target_from_file(wavlm: Any, path: Path, layer: int, device: torch.device) -> Stats:

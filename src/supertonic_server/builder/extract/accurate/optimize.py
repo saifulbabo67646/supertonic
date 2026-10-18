@@ -3,25 +3,25 @@
 # Copyright (c) 2026 Saurabh Verma. MIT License (see LICENSE-supertonic3-voice-clone).
 # train_style.py is a modified optimize_style.py by Gyeongmin Kim
 # (https://github.com/kdrkdrkdr), MIT License.
-# Adapted: the script became three functions; the DataLoader became a list of prompts
+# Adapted: the script became two functions (the preset scan is shared, in
+# common/preset_scan.py); the DataLoader became a list of prompts
 # tokenised in one padded batch by the `supertonic` package's text processor and sorted
 # longest first, as upstream does; the loss is an argument; progress through a callback
 # and a stop check polled every step that keeps the best vector so far; the best vector is
 # the one that produced the best loss (upstream cloned it after the optimiser step);
 # checkpoint files are gone; typed. Hyper-parameters and the loop are unchanged.
-"""The ``accurate`` descent: nearest preset by speaker loss, then Adam on ``style_ttl``.
+"""The ``accurate`` descent: Adam on ``style_ttl`` against the speaker loss.
 
 One noisy latent is drawn once (seeded), sized from the sizing preset's duration on the
 first (longest) sentence, and every synthesis uses it, so only the style changes between
-steps. The preset scan measures every preset on that first sentence; the descent then
-rotates through the sentences one per step, starting with the second.
+steps. The preset scan (shared) measures every preset on that first sentence; the descent
+then rotates through the sentences one per step, starting with the second.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
-from pathlib import Path
 
 import numpy as np
 import torch
@@ -29,9 +29,7 @@ import torch
 from supertonic_server.builder.extract.accurate.config import AccurateConfig
 from supertonic_server.builder.extract.base import ProgressCallback, StopCheck, progress
 from supertonic_server.builder.extract.common.frozen_tts import SR, FrozenTTS, Prompt
-from supertonic_server.builder.extract.common.style_file import load_style
-
-LossFn = Callable[[torch.Tensor], torch.Tensor]
+from supertonic_server.builder.extract.common.preset_scan import WaveLoss
 
 
 @dataclass
@@ -76,41 +74,12 @@ def training_prompts(
     ]
 
 
-def nearest_preset(
-    presets: Sequence[Path],
-    prompt: Prompt,
-    tts: FrozenTTS,
-    loss_fn: LossFn,
-    *,
-    on_progress: ProgressCallback,
-    should_stop: StopCheck,
-) -> tuple[Path, float, bool] | None:
-    """``(preset, loss, stopped)`` of the preset closest to the reference on ``prompt``.
-
-    ``None`` when stopped before any preset was measured.
-    """
-    best: tuple[Path, float] | None = None
-    for i, path in enumerate(presets, 1):
-        if should_stop():
-            return None if best is None else (*best, True)
-        ttl, _ = load_style(path, tts.device)
-        wav = tts.synthesize(prompt, ttl)
-        with torch.no_grad():
-            loss = float(loss_fn(wav))
-        if best is None or loss < best[1]:
-            best = (path, loss)
-        on_progress(
-            progress("preset", f"{path.stem}: {loss:.4f}", step=i, total=len(presets), loss=loss)
-        )
-    return None if best is None else (*best, False)
-
-
 def optimise(
     ttl_start: torch.Tensor,
     start_loss: float,
     prompts: Sequence[Prompt],
     tts: FrozenTTS,
-    loss_fn: LossFn,
+    loss_fn: WaveLoss,
     cfg: AccurateConfig,
     *,
     on_progress: ProgressCallback,

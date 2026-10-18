@@ -71,6 +71,11 @@ markers = [
   "model: needs real Supertonic weights",
   "gpu: needs a CUDA GPU, the builder extra and real weights",
 ]
+filterwarnings = [
+  # onnx2torch's Slice converter indexes with a list (torch deprecation); it still works
+  # on the pinned torch 2.9.1 and is outside this project.
+  "ignore:Using a non-tuple sequence for multidimensional indexing is deprecated:UserWarning:onnx2torch",
+]
 
 [tool.ruff]
 line-length = 100
