@@ -2,32 +2,37 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
+from pydantic import Field
 
-from supertonic_server.builder.audio_prep import MAX_UPLOAD_BYTES
+from supertonic_server.core.limits import MAX_FILES, MAX_UPLOAD_BYTES
 from supertonic_server.mcp.client import SupertonicApiError, SupertonicClient
+from supertonic_server.mcp.errors import fail
 
-
-def _fail(exc: SupertonicApiError) -> ToolError:
-    return ToolError(f"{exc.message} (code: {exc.code})")
+MIB = 1024 * 1024
 
 
 def _check_files(audio_paths: list[str]) -> list[Path]:
     """Resolve the reference files, failing with the offending path before any request."""
+    if not 1 <= len(audio_paths) <= MAX_FILES:
+        raise ToolError(f"Provide 1 to {MAX_FILES} reference audio files, got {len(audio_paths)}")
     paths = [Path(p).expanduser().absolute() for p in audio_paths]
     total = 0
     for path in paths:
+        if path.is_dir():
+            raise ToolError(f"Reference audio path is not a file: {path}")
         if not path.is_file():
             raise ToolError(f"Reference audio file not found: {path}")
         total += path.stat().st_size
     if total > MAX_UPLOAD_BYTES:
         raise ToolError(
-            f"Reference audio is {total / 1e6:.1f} MB; the limit is "
-            f"{MAX_UPLOAD_BYTES // 1_000_000} MB in total"
+            f"Reference audio is {total / MIB:.1f} MB; the limit is "
+            f"{MAX_UPLOAD_BYTES // MIB} MB in total"
         )
     return paths
 
@@ -71,7 +76,7 @@ def register_build_tools(server: MCPServer, client: SupertonicClient) -> None:
         Returns ``{job_id, state, method}``. When the job succeeds, ``get_job`` returns the
         new ``voice_id``, usable with ``speak``.
         """
-        files = _check_files(audio_paths)
+        files = await asyncio.to_thread(_check_files, audio_paths)
         try:
             job = await client.build(
                 files,
@@ -83,7 +88,7 @@ def register_build_tools(server: MCPServer, client: SupertonicClient) -> None:
                 tags=tags,
             )
         except SupertonicApiError as exc:
-            raise _fail(exc) from exc
+            raise fail(exc) from exc
         return {
             "job_id": job["id"],
             "state": job["state"],
@@ -102,27 +107,29 @@ def register_build_tools(server: MCPServer, client: SupertonicClient) -> None:
         try:
             return _job_view(await client.job(job_id))
         except SupertonicApiError as exc:
-            raise _fail(exc) from exc
+            raise fail(exc) from exc
 
     @server.tool()
-    async def list_jobs(limit: int = 10) -> list[dict[str, Any]]:
+    async def list_jobs(limit: Annotated[int, Field(ge=1, le=200)] = 10) -> list[dict[str, Any]]:
         """List recent voice build jobs, newest first.
 
-        Each item is the full job: ``{id, state, request, progress, voice_id, error, ...}``.
+        ``limit`` is 1 to 200. Each item is the full job:
+        ``{id, state, request, progress, voice_id, error, ...}``.
         """
         try:
             return await client.jobs(limit)
         except SupertonicApiError as exc:
-            raise _fail(exc) from exc
+            raise fail(exc) from exc
 
     @server.tool()
     async def finish_job(job_id: str) -> dict[str, Any]:
         """Stop a running build now and keep the best result so far.
 
-        The job then succeeds and its voice is imported (flagged as stopped early). Call
+        Only applies while the job is running (an unknown or already finished job is an
+        error). The job then succeeds and its voice is imported (flagged as stopped early). Call
         ``get_job`` to see when it is done. Returns the updated job.
         """
         try:
             return await client.finish(job_id)
         except SupertonicApiError as exc:
-            raise _fail(exc) from exc
+            raise fail(exc) from exc

@@ -15,9 +15,8 @@ import numpy as np
 from supertonic_server.audio.codec import NATIVE_RATE, to_pcm16
 from supertonic_server.audio.timing import FRAME_MS, SILENCE_DB, speech_bounds
 from supertonic_server.core.errors import ApiError
+from supertonic_server.core.limits import MAX_FILES, MAX_UPLOAD_BYTES
 
-MAX_FILES = 3
-MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 MIN_SPEECH_S = 3.0
 MAX_SPEECH_S = 60.0
 MAX_SILENCE_RATIO = 0.7

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -146,7 +147,11 @@ class SupertonicClient:
             "consent": "true" if consent else "false",
             "method": method,
         }
-        parts = [("files", (p.name, p.read_bytes(), "application/octet-stream")) for p in files]
+        contents = await asyncio.gather(*(asyncio.to_thread(p.read_bytes) for p in files))
+        parts = [
+            ("files", (p.name, data, "application/octet-stream"))
+            for p, data in zip(files, contents, strict=True)
+        ]
         data: dict[str, Any] = (
             await self._request("POST", "/v1/voices/build", data=form, files=parts)
         ).json()

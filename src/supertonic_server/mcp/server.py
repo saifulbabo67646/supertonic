@@ -16,9 +16,10 @@ import httpx
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
-from supertonic_server.audio import finalize_wav
+from supertonic_server.core.wavfile import finalize_wav
 from supertonic_server.mcp.build_tools import register_build_tools
 from supertonic_server.mcp.client import SupertonicApiError, SupertonicClient
+from supertonic_server.mcp.errors import fail
 
 logger = logging.getLogger(__name__)
 
@@ -28,10 +29,6 @@ SPEAK_FORMATS = ("wav", "mp3", "flac", "opus", "aac", "pcm")
 TIMESTAMP_FORMATS = ("wav", "mp3")
 PCM_DEFAULT_RATE = 24000
 REQUEST_TIMEOUT = 300.0
-
-
-def _fail(exc: SupertonicApiError) -> ToolError:
-    return ToolError(f"{exc.message} (code: {exc.code})")
 
 
 def _target(output_dir: Path, voice: str, fmt: str, output_path: str | None) -> Path:
@@ -92,7 +89,7 @@ def build_server(client: SupertonicClient, output_dir: Path) -> MCPServer:
         try:
             langs = await client.languages()
         except SupertonicApiError as exc:
-            raise _fail(exc) from exc
+            raise fail(exc) from exc
         return [{"code": lang["code"], "name": lang["name"]} for lang in langs]
 
     @server.tool()
@@ -109,7 +106,7 @@ def build_server(client: SupertonicClient, output_dir: Path) -> MCPServer:
         try:
             voices = await client.voices(kind, tag)
         except SupertonicApiError as exc:
-            raise _fail(exc) from exc
+            raise fail(exc) from exc
         keys = ("id", "name", "kind", "gender", "tags", "description")
         return [{k: v.get(k) for k in keys} for v in voices]
 
@@ -164,7 +161,7 @@ def build_server(client: SupertonicClient, output_dir: Path) -> MCPServer:
                 }
             speech = await client.speech(text, voice, language, speed, format)
         except SupertonicApiError as exc:
-            raise _fail(exc) from exc
+            raise fail(exc) from exc
         audio = speech.audio
         duration: int | None = None
         if format == "wav":
@@ -188,7 +185,7 @@ def build_server(client: SupertonicClient, output_dir: Path) -> MCPServer:
         try:
             audio = await client.preview(voice, language)
         except SupertonicApiError as exc:
-            raise _fail(exc) from exc
+            raise fail(exc) from exc
         name = f"preview-{voice}-{language}"
         path = _target(output_dir, name, "wav", None)
         return {"path": _save(path, audio)}

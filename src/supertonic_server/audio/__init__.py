@@ -5,12 +5,12 @@ from supertonic_server.audio.codec import (
     MIME,
     NATIVE_RATE,
     encode,
-    finalize_wav,
     resample,
     to_pcm16,
     wav_header,
 )
 from supertonic_server.audio.timing import Span, estimate_spans, speech_bounds
+from supertonic_server.core.wavfile import finalize_wav
 
 __all__ = [
     "ALLOWED_RATES",

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import subprocess
 import sys
 import time
 from collections.abc import AsyncIterator, Callable, Sequence
@@ -18,6 +19,7 @@ from fakes_builder import FAKE_WORKER
 from supertonic_server.api import create_app
 from supertonic_server.builder import PreparedAudio, jobs
 from supertonic_server.builder.jobs import JobManager
+from supertonic_server.mcp import build_tools
 from supertonic_server.mcp.client import SupertonicClient
 from supertonic_server.mcp.server import build_server
 
@@ -127,7 +129,7 @@ async def test_finish_job_succeeds(
         assert time.monotonic() < deadline, "job never started"
         await asyncio.sleep(0.02)  # noqa: ASYNC110 - polling a remote job state
     finished = await call(mcp, "finish_job", job_id=job_id)
-    assert finished["state"] in {"running", "succeeded"}
+    assert finished["id"] == job_id and finished["stopping"] is True
     assert (await wait_done(mcp, job_id))["state"] == "succeeded"
 
 
@@ -145,3 +147,53 @@ async def test_missing_file_names_path(mcp: MCPServer, tmp_path: Path) -> None:
 async def test_unknown_job_is_tool_error(mcp: MCPServer) -> None:
     with pytest.raises(ToolError, match="job_not_found"):
         await mcp.call_tool("get_job", {"job_id": "nope"})
+
+
+async def test_directory_path(mcp: MCPServer, tmp_path: Path) -> None:
+    with pytest.raises(ToolError, match="not a file"):
+        await mcp.call_tool("build_voice", build_args(str(tmp_path)))
+
+
+@pytest.mark.parametrize("count", [0, 4])
+async def test_file_count_checked_before_http(mcp: MCPServer, audio: str, count: int) -> None:
+    args = build_args(audio)
+    args["audio_paths"] = [audio] * count
+    with pytest.raises(ToolError, match="1 to 3"):
+        await mcp.call_tool("build_voice", args)
+
+
+async def test_size_limit_message_uses_mib(
+    mcp: MCPServer, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    big = tmp_path / "big.wav"
+    with big.open("wb") as f:
+        f.truncate(2 * 1024 * 1024 + 1)  # sparse
+    monkeypatch.setattr(build_tools, "MAX_UPLOAD_BYTES", 2 * 1024 * 1024)
+    with pytest.raises(ToolError, match=r"limit is 2 MB"):
+        await mcp.call_tool("build_voice", build_args(str(big)))
+
+
+async def test_home_is_expanded(
+    mcp: MCPServer, audio: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    started = await call(mcp, "build_voice", **build_args("~/ref.wav"))
+    assert started["job_id"]
+    await wait_done(mcp, started["job_id"])
+
+
+@pytest.mark.parametrize("limit", [0, 201])
+async def test_list_jobs_limit_bounds(mcp: MCPServer, limit: int) -> None:
+    with pytest.raises(ToolError):
+        await mcp.call_tool("list_jobs", {"limit": limit})
+
+
+def test_mcp_process_stays_thin() -> None:
+    code = (
+        "import sys, supertonic_server.mcp.server;"
+        "bad = [m for m in ('numpy', 'imageio_ffmpeg', 'soxr', 'onnxruntime', 'torch')"
+        " if m in sys.modules]; print(bad)"
+    )
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
+    assert out.stdout.strip() == "[]"

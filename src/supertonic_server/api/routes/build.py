@@ -10,8 +10,8 @@ from starlette.datastructures import UploadFile
 from supertonic_server.api.deps import AppState
 from supertonic_server.api.routes._common import State
 from supertonic_server.builder import Builder, BuildMethod, BuildRequest
-from supertonic_server.builder.audio_prep import MAX_FILES, MAX_UPLOAD_BYTES
 from supertonic_server.core.errors import ApiError, builder_unavailable
+from supertonic_server.core.limits import MAX_FILES, MAX_UPLOAD_BYTES
 
 router = APIRouter(prefix="/v1")
 

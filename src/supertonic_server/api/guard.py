@@ -29,8 +29,8 @@ from starlette._utils import get_route_path
 from starlette.datastructures import Headers, QueryParams
 from starlette.responses import JSONResponse
 
-from supertonic_server.builder.audio_prep import MAX_UPLOAD_BYTES
 from supertonic_server.core.errors import ApiError, error_body
+from supertonic_server.core.limits import MAX_UPLOAD_BYTES
 
 if TYPE_CHECKING:
     from starlette.types import ASGIApp, Message, Receive, Scope, Send
