@@ -3,25 +3,42 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Iterator
 from typing import Any
+
+import numpy as np
 
 from supertonic_server.core.errors import ApiError
 
 EXPECTED_DIMS: dict[str, list[int]] = {"style_ttl": [1, 50, 256], "style_dp": [1, 8, 16]}
 
 
-def _flatten(value: Any) -> Iterator[Any]:
-    """Yield the leaves of an arbitrarily nested list."""
-    if isinstance(value, list):
-        for item in value:
-            yield from _flatten(item)
-    else:
-        yield value
-
-
 def _invalid(message: str) -> ApiError:
     return ApiError(400, "invalid_style", message, param="style")
+
+
+def _as_array(key: str, data: Any, dims: list[int]) -> np.ndarray:
+    """Convert ``data`` to a float32 array shaped ``dims`` or raise ``invalid_style``.
+
+    Accepts nesting matching ``dims`` exactly, or a flat list of the right length (the
+    ``supertonic`` loader reshapes ``data`` to ``dims``). Ragged or overly deep nesting and
+    non-numeric leaves are rejected without recursing in Python.
+    """
+    try:
+        arr = np.asarray(data)
+    except (ValueError, RecursionError, TypeError, OverflowError):
+        raise _invalid(f"'{key}.data' must be a regular nested list of numbers") from None
+    if arr.dtype.kind not in "iuf":
+        raise _invalid(f"'{key}.data' contains a non-finite or non-numeric value")
+    expected = math.prod(dims)
+    if list(arr.shape) != dims and arr.shape != (expected,):
+        if arr.size != expected:
+            raise _invalid(f"'{key}.data' has {arr.size} values, expected {expected}")
+        raise _invalid(f"'{key}.data' has shape {list(arr.shape)}, expected {dims}")
+    with np.errstate(over="ignore"):
+        out = arr.astype(np.float32)
+    if not np.isfinite(out).all():
+        raise _invalid(f"'{key}.data' contains a non-finite or non-numeric value")
+    return out
 
 
 def validate_style(data: dict[str, Any]) -> None:
@@ -40,10 +57,4 @@ def validate_style(data: dict[str, Any]) -> None:
             raise _invalid(f"'{key}' needs 'dims' and 'data'")
         if part["dims"] != dims:
             raise _invalid(f"'{key}.dims' must be {dims}, got {part['dims']}")
-        values = list(_flatten(part["data"]))
-        expected = math.prod(dims)
-        if len(values) != expected:
-            raise _invalid(f"'{key}.data' has {len(values)} values, expected {expected}")
-        for v in values:
-            if isinstance(v, bool) or not isinstance(v, int | float) or not math.isfinite(v):
-                raise _invalid(f"'{key}.data' contains a non-finite or non-numeric value")
+        _as_array(key, part["data"], dims)

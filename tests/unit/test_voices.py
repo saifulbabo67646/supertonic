@@ -151,3 +151,38 @@ def test_concurrent_imports(lib: VoiceLibrary) -> None:
     [t.start() for t in ts]
     [t.join() for t in ts]
     assert len(set(ids)) == 8
+
+
+def _deep(value: object, depth: int) -> object:
+    for _ in range(depth):
+        value = [value]
+    return value
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        # Right leaf count (8 * 16) but ragged rows.
+        [[[0.0] * 17, [0.0] * 15, *([[0.0] * 16] * 6)]],
+        _deep(0.0, 5000),
+        [[["0.5"] * 16] * 8],
+        [[[0.0] * 16] * 7 + [[0.0] * 8 + [[0.0]] * 8]],
+    ],
+)
+def test_ragged_or_deep_style_data_rejected(lib: VoiceLibrary, data: object) -> None:
+    from supertonic_server.voices.validation import validate_style
+
+    s = make_style()
+    s["style_dp"]["data"] = data
+    with pytest.raises(ApiError) as e:
+        validate_style(s)
+    assert e.value.code == "invalid_style" and e.value.status == 400
+
+
+def test_flat_style_data_accepted() -> None:
+    """The loader reshapes ``data`` to ``dims``, so a flat list of the right length is fine."""
+    from supertonic_server.voices.validation import validate_style
+
+    s = make_style()
+    s["style_dp"]["data"] = [0.25] * (8 * 16)
+    validate_style(s)
