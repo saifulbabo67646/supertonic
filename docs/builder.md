@@ -182,7 +182,7 @@ per builder; up to 8 more wait, and a ninth gets `503 builder_busy`.
   process tree within seconds. The job ends `cancelled` and nothing is imported.
 - **Finish now** (`POST /v1/jobs/{id}/finish`, the Finish now button, MCP `finish_job`)
   ends the timbre stage: the optimisation stops at the next step and keeps the best numbers
-  found so far. The rhythm matching (`duration`, about 2.5 minutes) still runs in full, then
+  found so far. The rhythm matching (`duration`, 2 to 5 minutes) still runs in full, then
   the voice is saved and imported; the UI shows "Finishing: matching the speaking pace" in
   the meantime. The job succeeds with `build.stopped_early: true` and a real
   `duration_status` (for example `converged`). An `accurate` build is already close to the

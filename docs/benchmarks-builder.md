@@ -43,7 +43,7 @@ Notes:
   Finish now after 10 to 20 minutes already gives a usable voice.
 - The Finish now run above skipped the rhythm matching (11.1 min). Finish now has since
   been changed to end only the timbre stage: the rhythm matching still runs, which adds
-  about 2.5 minutes and gives the early voice the speaker's own pace.
+  2 to 5 minutes and gives the early voice the speaker's own pace.
 - The nearest preset for watson in the `accurate` (ECAPA) scan was `F5`; in the R1 spike the
   WavLM scan picked `M5`. The scan only chooses the starting point.
 - `similarity` is the same ECAPA score `accurate` optimises, so it is optimistic; listening
