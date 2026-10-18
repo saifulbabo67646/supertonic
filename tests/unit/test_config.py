@@ -97,3 +97,22 @@ def test_dotenv_in_cwd_does_not_leak_into_tests(
     monkeypatch.chdir(tmp_path)
     s = Settings()
     assert (s.port, s.api_key) == (8787, None)
+
+
+def test_builder_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    from pydantic import ValidationError
+
+    s = Settings()
+    assert (s.builder, s.builder_url, s.builder_api_key, s.builder_timeout_min) == (
+        "auto",
+        None,
+        None,
+        150,
+    )
+    monkeypatch.setenv("SUPERTONIC_BUILDER", "local")
+    monkeypatch.setenv("SUPERTONIC_BUILDER_API_KEY", "  ")
+    monkeypatch.setenv("SUPERTONIC_BUILDER_TIMEOUT_MIN", "5")
+    s = Settings()
+    assert (s.builder, s.builder_api_key, s.builder_timeout_min) == ("local", None, 5)
+    with pytest.raises(ValidationError):
+        Settings(builder="sometimes")  # type: ignore[arg-type]

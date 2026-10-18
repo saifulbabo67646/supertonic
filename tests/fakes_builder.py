@@ -1,0 +1,119 @@
+"""A scripted stand-in for ``python -m supertonic_server.builder.worker`` (run as a script).
+
+``JobManager(worker_cmd=[sys.executable, FAKE_WORKER])`` runs this file with the worker's
+arguments. Behaviour comes from the environment:
+
+- ``FAKE_BUILDER_DIR``: control directory. Run ``n`` (0-based, counted per directory) writes
+  ``run-<n>.json`` (``pid``, ``child_pid``, ``argv``) before doing anything else.
+- ``FAKE_BUILDER_MODES``: comma-separated mode per run (the last one repeats; default ``ok``):
+
+  - ``ok``: two progress events, then ``done``.
+  - ``noisy``: like ``ok`` with a non-JSON line on stdout first.
+  - ``gate``: one progress event, then waits for ``<dir>/go`` or the stop file, then ``done``
+    (``stopped_early`` true when the stop file ended the wait).
+  - ``hang``: starts a sleeping child process (the "tree"), then sleeps, ignoring the stop file.
+  - ``crash``: a progress event and a traceback on stderr, then exit code 3, no terminal event.
+  - ``error:<code>``: an error event with ``code`` (exit code 1).
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+import time
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+FAKE_WORKER = str(Path(__file__).resolve())
+
+
+def _emit(obj: dict[str, Any]) -> None:
+    sys.stdout.write(json.dumps(obj) + "\n")
+    sys.stdout.flush()
+
+
+def _progress(stage: str, message: str, step: int | None = None) -> None:
+    at = datetime.now(UTC).isoformat()
+    _emit(
+        {
+            "type": "progress",
+            "stage": stage,
+            "step": step,
+            "total": 3 if step is not None else None,
+            "loss": 0.5 if step is not None else None,
+            "message": message,
+            "at": at,
+        }
+    )
+
+
+def _done(args: argparse.Namespace, stopped: bool) -> int:
+    from supertonic_server.builder.extract.fake import make_style
+
+    report = {
+        "method": args.method,
+        "preset_start": "F1",
+        "preset_distance": 0.5,
+        "loss": 0.25,
+        "steps": 1 if stopped else 3,
+        "duration_status": "converged",
+        "rate_ref": 3.0,
+        "rate_final": 3.0,
+        "stopped_early": stopped,
+    }
+    args.out.write_text(json.dumps(make_style()), encoding="utf-8")
+    args.report.write_text(json.dumps(report), encoding="utf-8")
+    _emit({"type": "done", "report": report})
+    return 0
+
+
+def main() -> int:
+    """Run one scripted build."""
+    ap = argparse.ArgumentParser()
+    for name in ("--method", "--device"):
+        ap.add_argument(name)
+    for name in ("--wav", "--out", "--report", "--model-dir", "--stop-file"):
+        ap.add_argument(name, type=Path)
+    args = ap.parse_args()
+    control = Path(os.environ["FAKE_BUILDER_DIR"])
+    modes = os.environ.get("FAKE_BUILDER_MODES", "ok").split(",")
+    n = len(list(control.glob("run-*.json")))
+    mode = modes[min(n, len(modes) - 1)]
+    child = None
+    if mode == "hang":
+        child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    info = {"pid": os.getpid(), "child_pid": child.pid if child else None, "argv": sys.argv[1:]}
+    tmp = control / f"run-{n}.tmp"
+    tmp.write_text(json.dumps(info), encoding="utf-8")
+    os.replace(tmp, control / f"run-{n}.json")
+    if mode == "hang":
+        time.sleep(60)
+        return 0
+    if mode == "crash":
+        _progress("loading", "fake: loading")
+        sys.stderr.write("Traceback (most recent call last):\nRuntimeError: kaboom\n")
+        sys.stderr.flush()
+        return 3
+    if mode.startswith("error:"):
+        sys.stderr.write("about to fail\n")
+        _emit(
+            {"type": "error", "code": mode.split(":", 1)[1], "message": f"fake failure: {mode[6:]}"}
+        )
+        return 1
+    if mode == "noisy":
+        print("this is not json", flush=True)
+    _progress("loading", "fake: loading")
+    if mode == "gate":
+        while not (control / "go").exists() and not args.stop_file.exists():
+            time.sleep(0.01)
+        return _done(args, stopped=args.stop_file.exists())
+    _progress("timbre", "fake: timbre", step=1)
+    return _done(args, stopped=False)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

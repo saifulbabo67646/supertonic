@@ -175,8 +175,12 @@ class VoiceLibrary:
         description: str = "",
         tags: Sequence[str] = (),
         source_note: str = "",
+        extra: dict[str, Any] | None = None,
     ) -> Voice:
-        """Validate and store a new custom voice; nothing is written if invalid."""
+        """Validate and store a new custom voice; nothing is written if invalid.
+
+        ``extra`` (build metadata) is stored as ``voice.json["build"]``.
+        """
         validate_style(style)
         with self._lock:
             # Folders on disk count too: a leftover folder without valid metadata would
@@ -197,6 +201,7 @@ class VoiceLibrary:
                 None,
                 source_note,
                 datetime.now(UTC).isoformat(),
+                build=dict(extra) if extra is not None else None,
             )
             folder = self.custom_dir / vid
             folder.mkdir(parents=True)

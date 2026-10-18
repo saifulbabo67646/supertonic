@@ -20,6 +20,7 @@ class Voice:
         source_note: Where the voice came from.
         created_at: ISO-8601 UTC creation time (empty for presets).
         model: Model the style belongs to.
+        build: How a built voice was made (method, loss, builder, ...); ``None`` otherwise.
     """
 
     id: str
@@ -31,6 +32,7 @@ class Voice:
     source_note: str = ""
     created_at: str = ""
     model: str = "supertonic-3"
+    build: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-serialisable dict of all fields."""

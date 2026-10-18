@@ -231,3 +231,16 @@ def test_scan_takes_id_from_folder(lib: VoiceLibrary, caplog: pytest.LogCaptureF
     again = VoiceLibrary(lib.presets_dir, lib.custom_dir)
     assert [x.id for x in again.list()] == ["F1", "M1", "noid", "real"]
     assert "copy" in caplog.text
+
+
+def test_import_style_build_metadata(lib: VoiceLibrary) -> None:
+    plain = lib.import_style(make_style(), name="Plain")
+    assert plain.build is None and plain.to_dict()["build"] is None
+    built = lib.import_style(make_style(), name="Built", extra={"method": "fast", "loss": 0.1})
+    assert built.to_dict()["build"] == {"method": "fast", "loss": 0.1}
+    meta = json.loads((lib.custom_dir / "built" / "voice.json").read_text(encoding="utf-8"))
+    assert meta["build"] == {"method": "fast", "loss": 0.1}
+    again = VoiceLibrary(lib.presets_dir, lib.custom_dir)
+    assert again.get("built").build == {"method": "fast", "loss": 0.1}
+    assert again.get("plain").build is None
+    assert lib.update("built", description="d").build == {"method": "fast", "loss": 0.1}

@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -33,9 +33,12 @@ class Settings(BaseSettings):
     max_queue: int = Field(64, ge=1)
     realtime_steps: int = Field(3, ge=1, le=100)
     default_voice: str = "F1"
+    builder: Literal["auto", "local", "off"] = "auto"
     builder_url: str | None = None
+    builder_api_key: str | None = None
+    builder_timeout_min: int = Field(150, ge=1)
 
-    @field_validator("api_key", mode="before")
+    @field_validator("api_key", "builder_api_key", mode="before")
     @classmethod
     def _blank_key_is_none(cls, value: Any) -> Any:
         """Strip the key; an empty or whitespace-only key means "no key"."""
