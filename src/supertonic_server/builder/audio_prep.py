@@ -16,6 +16,7 @@ from supertonic_server.audio.codec import NATIVE_RATE, to_pcm16
 from supertonic_server.audio.timing import FRAME_MS, SILENCE_DB, speech_bounds
 from supertonic_server.core.errors import ApiError
 from supertonic_server.core.limits import MAX_FILES, MAX_UPLOAD_BYTES
+from supertonic_server.core.scrub import scrub_paths
 
 MIN_SPEECH_S = 3.0
 MAX_SPEECH_S = 60.0
@@ -42,6 +43,11 @@ def _invalid(message: str) -> ApiError:
     return ApiError(400, "invalid_reference_audio", message, param="files")
 
 
+def _decoder_unavailable(exc: Exception) -> ApiError:
+    message = f"audio decoder unavailable: {scrub_paths(str(exc))}"
+    return ApiError(500, "internal_error", message, type_="server_error")
+
+
 def _label(name: str) -> str:
     """Client file name, truncated for echoing in messages."""
     return name if len(name) <= _NAME_MAX else name[:_NAME_MAX] + "..."
@@ -57,9 +63,7 @@ def _decode(index: int, name: str, data: bytes) -> np.ndarray:
     try:
         exe = imageio_ffmpeg.get_ffmpeg_exe()
     except Exception as exc:
-        raise ApiError(
-            500, "internal_error", f"audio decoder unavailable: {exc}", type_="server_error"
-        ) from None
+        raise _decoder_unavailable(exc) from None
     with tempfile.TemporaryDirectory(prefix="supertonic-ref-") as tmp:
         src = Path(tmp) / f"ref-{index}"
         src.write_bytes(data)
@@ -73,11 +77,10 @@ def _decode(index: int, name: str, data: bytes) -> np.ndarray:
         except subprocess.TimeoutExpired:
             raise _invalid(f"{label}: decoding timed out") from None
         except OSError as exc:
-            raise ApiError(
-                500, "internal_error", f"audio decoder unavailable: {exc}", type_="server_error"
-            ) from None
+            raise _decoder_unavailable(exc) from None
     if proc.returncode != 0 or len(proc.stdout) < 4:
-        tail = proc.stderr.decode("utf-8", "replace").strip()[-_STDERR_TAIL:]
+        # ffmpeg names the temp file it read: scrub before cutting so no partial path is left
+        tail = scrub_paths(proc.stderr.decode("utf-8", "replace")).strip()[-_STDERR_TAIL:]
         raise _invalid(f"{label}: not decodable audio" + (f" ({tail})" if tail else ""))
     usable = len(proc.stdout) // 4 * 4
     audio = np.frombuffer(proc.stdout[:usable], dtype="<f4").astype(np.float32)

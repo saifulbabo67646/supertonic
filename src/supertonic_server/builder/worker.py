@@ -38,6 +38,7 @@ from supertonic_server.builder.extract.base import (
     progress,
 )
 from supertonic_server.builder.models import BUILD_METHODS, BuildMethod, Progress
+from supertonic_server.core.scrub import scrub_paths
 
 logger = logging.getLogger("supertonic_server.builder.worker")
 
@@ -278,7 +279,8 @@ def main(argv: list[str] | None = None, out: TextIO | None = None) -> int:
             logger.error("build failed: %s: %s", err.code, err.message)
         else:
             logger.exception("build failed: %s", err.code)
-        _emit({"type": "error", "code": err.code, "message": err.message})
+        # scrubbed here, at the source: a forwarding server passes the message on unchanged
+        _emit({"type": "error", "code": err.code, "message": scrub_paths(err.message)})
         return 1
 
 

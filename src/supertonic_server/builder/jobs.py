@@ -36,6 +36,7 @@ from supertonic_server.builder.process import KILL_WAIT_S, kill_tree, spawn
 from supertonic_server.builder.runlog import RunLog
 from supertonic_server.core import errors
 from supertonic_server.core.errors import ApiError
+from supertonic_server.core.scrub import scrub_paths
 from supertonic_server.voices.library import VoiceLibrary
 
 logger = logging.getLogger(__name__)
@@ -252,7 +253,9 @@ class JobManager:
             except Exception as exc:  # never let one job stop the runner
                 logger.exception("voice build %s crashed the runner", job_id)
                 if job.state not in TERMINAL:
-                    self._settle(job, "failed", {"code": "internal_error", "message": str(exc)})
+                    self._settle(
+                        job, "failed", {"code": "internal_error", "message": scrub_paths(str(exc))}
+                    )
             finally:
                 if job.state not in TERMINAL:  # the runner itself was cancelled (close)
                     self._settle(job, "cancelled", None)
@@ -278,7 +281,9 @@ class JobManager:
             try:
                 proc = await spawn(cmd, {**os.environ, "PYTHONUTF8": "1"})
             except OSError as exc:
-                self._settle(job, "failed", {"code": "worker_failed", "message": str(exc)})
+                self._settle(
+                    job, "failed", {"code": "worker_failed", "message": scrub_paths(str(exc))}
+                )
                 return
             run.proc = proc
             if run.cancelled:
@@ -316,7 +321,7 @@ class JobManager:
                 extra=extra,
             )
         except (OSError, ValueError, ApiError) as exc:
-            message = exc.message if isinstance(exc, ApiError) else str(exc)
+            message = scrub_paths(exc.message if isinstance(exc, ApiError) else str(exc))
             self._settle(job, "failed", {"code": "import_failed", "message": message})
             return
         job.voice_id = voice.id

@@ -351,3 +351,19 @@ def test_setup_io_tolerates_a_stream_that_cannot_be_reconfigured(
     monkeypatch.setattr(sys, "stderr", SimpleNamespace(reconfigure=ok, write=lambda s: None))
     worker_mod._setup_io()
     assert calls == ["stdout", "stderr"]
+
+
+def test_error_messages_name_no_local_paths(
+    job: dict[str, Path], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    secret = Path.home() / "private-models" / "vocoder.onnx"
+
+    def boom(*args: Any, **kwargs: Any) -> Any:
+        raise FileNotFoundError(f"[Errno 2] No such file or directory: '{secret}'")
+
+    monkeypatch.setattr(worker_mod, "_load_extractor", lambda device: boom)
+    assert worker_mod.main(_args(job, "fast")) != 0
+    error = json.loads(capsys.readouterr().out.splitlines()[-1])
+    assert error["code"] == "extract_failed"
+    assert str(Path.home()) not in error["message"]
+    assert "vocoder.onnx" in error["message"]

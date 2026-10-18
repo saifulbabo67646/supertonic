@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import tempfile
 import wave
@@ -239,3 +240,13 @@ def test_job_roundtrip() -> None:
     assert Job.from_dict(d) == job
     del d["request"]["method"]
     assert Job.from_dict(d).request.method == "accurate"
+
+
+def test_undecodable_message_names_no_temp_path(tmp_path: Path) -> None:
+    with pytest.raises(ApiError) as e:
+        prepare_reference([("x.wav", b"not audio at all" * 100)], tmp_path / "o.wav")
+    message = e.value.message
+    for temp in {tempfile.gettempdir(), os.path.realpath(tempfile.gettempdir())}:
+        assert temp not in message
+    assert str(Path.home()) not in message
+    assert message.startswith("x.wav: not decodable audio")

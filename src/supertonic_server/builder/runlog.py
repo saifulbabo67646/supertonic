@@ -15,6 +15,7 @@ from typing import IO, Any, get_args
 
 from supertonic_server.builder.models import Job, Progress, Stage
 from supertonic_server.builder.process import KILL_WAIT_S, kill_group_stragglers, kill_tree
+from supertonic_server.core.scrub import scrub_paths
 
 logger = logging.getLogger(__name__)
 
@@ -104,16 +105,17 @@ class RunLog:
 
         The last error event; else, when the worker exited 0 but its result was lost to an
         output-handling problem, that problem; else the last stderr line or the exit code.
+        Local paths in the message are scrubbed.
         """
         if self.error is not None:
-            return self.error
+            return {**self.error, "message": scrub_paths(self.error["message"])}
         if self.problem is not None and (returncode == 0 or not self._tail):
             message = self.problem
         elif self._tail:
             message = self._tail[-1]
         else:
             message = f"worker exited with code {returncode}"
-        return {"code": "worker_failed", "message": message[:MAX_MESSAGE]}
+        return {"code": "worker_failed", "message": scrub_paths(message)[:MAX_MESSAGE]}
 
     def _note(self, exc: BaseException) -> None:
         """Record an output-handling failure (logged once per run, counted after that)."""

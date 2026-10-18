@@ -676,3 +676,24 @@ def test_detect_local_builder_timeout_with_grandchild(
     probe = detect_local_builder(timeout_s=1.0)
     assert not probe.available and "timed out" in probe.reason
     assert time.monotonic() - t0 < 8
+
+
+def test_failure_line_names_no_local_paths(tmp_path: Path) -> None:
+    job = Job("j1", "running", _req(), "now", None, None, None, None, None, "local")
+    log = runlog.RunLog(tmp_path, job, lambda: None)
+    log._on_stderr(f"OSError: cannot open {Path.home() / 'secret' / 'model.onnx'}\n".encode())
+    failure = log.failure(1)
+    assert str(Path.home()) not in failure["message"]
+    assert failure["message"].endswith("model.onnx")
+
+
+async def test_spawn_failure_names_no_local_paths(
+    make_manager: ManagerFactory, tmp_path: Path
+) -> None:
+    real = os.path.realpath(tmp_path)  # noqa: ASYNC240 - test setup
+    missing = tmp_path / "no-such-python"
+    mgr = await make_manager(worker_cmd=[str(missing)])
+    done = await _settled(mgr, (await mgr.submit(_req(), FILES)).id)
+    assert done.error is not None and done.error["code"] == "worker_failed"
+    assert str(tmp_path) not in done.error["message"]
+    assert real not in done.error["message"]
