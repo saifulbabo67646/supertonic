@@ -15,6 +15,9 @@ Stage = Literal["preparing", "loading", "preset", "timbre", "duration", "saving"
 
 BUILD_METHODS: tuple[BuildMethod, ...] = ("accurate", "fast")
 MAX_NAME_LEN = 100
+MAX_DESCRIPTION_LEN = 500
+MAX_TAGS = 20
+MAX_TAG_LEN = 40
 
 
 @dataclass
@@ -34,6 +37,20 @@ class BuildRequest:
         if not name or len(name) > MAX_NAME_LEN:
             raise ApiError(
                 400, "invalid_request", f"name must be 1-{MAX_NAME_LEN} characters", param="name"
+            )
+        if len(self.description) > MAX_DESCRIPTION_LEN:
+            raise ApiError(
+                400,
+                "invalid_request",
+                f"description must be at most {MAX_DESCRIPTION_LEN} characters",
+                param="description",
+            )
+        if len(self.tags) > MAX_TAGS or any(len(t) > MAX_TAG_LEN for t in self.tags):
+            raise ApiError(
+                400,
+                "invalid_request",
+                f"at most {MAX_TAGS} tags of up to {MAX_TAG_LEN} characters each",
+                param="tags",
             )
         if self.method not in BUILD_METHODS:
             raise ApiError(

@@ -6,25 +6,27 @@ import asyncio
 import json
 import sys
 import time
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import httpx
 import pytest
 
-from conftest import _client
 from fakes_builder import FAKE_WORKER
 from supertonic_server.api import create_app
 from supertonic_server.builder import Builder, PreparedAudio, jobs
 from supertonic_server.builder.jobs import JobManager
 
 if TYPE_CHECKING:
+    from fastapi import FastAPI
+
     from supertonic_server.core.config import Settings
     from supertonic_server.engine import Engine
     from supertonic_server.voices import VoiceLibrary
 
 FORM = {"name": "Narrator", "source_note": "my own voice", "consent": "true", "tags": "a, b"}
+AppClient = Callable[["FastAPI"], httpx.AsyncClient]
 TERMINAL = {"succeeded", "failed", "cancelled"}
 
 
@@ -65,9 +67,13 @@ async def manager(
 
 @pytest.fixture
 async def bclient(
-    settings: Settings, engine: Engine, lib: VoiceLibrary, manager: JobManager
+    settings: Settings,
+    engine: Engine,
+    lib: VoiceLibrary,
+    manager: JobManager,
+    app_client: AppClient,
 ) -> AsyncIterator[httpx.AsyncClient]:
-    async with _client(create_app(settings, engine, lib, manager)) as c:
+    async with app_client(create_app(settings, engine, lib, manager)) as c:
         yield c
 
 
@@ -173,10 +179,14 @@ async def test_no_builder_is_503_with_hint(client: httpx.AsyncClient) -> None:
 
 
 async def test_endpoints_require_auth(
-    settings: Settings, engine: Engine, lib: VoiceLibrary, manager: JobManager
+    settings: Settings,
+    engine: Engine,
+    lib: VoiceLibrary,
+    manager: JobManager,
+    app_client: AppClient,
 ) -> None:
     keyed = settings.model_copy(update={"api_key": "secret"})
-    async with _client(create_app(keyed, engine, lib, manager)) as c:
+    async with app_client(create_app(keyed, engine, lib, manager)) as c:
         assert (await c.get("/v1/jobs")).status_code == 401
         assert (await c.post("/v1/voices/build", data=FORM, files=_files())).status_code == 401
         assert (await c.post("/v1/jobs/x/finish")).status_code == 401
@@ -223,3 +233,149 @@ async def test_start_builder_modes(
     assert await builder_boot.start_builder(settings, lib, tmp_path) == (None, None)
     local = settings.model_copy(update={"builder": "local"})
     assert await builder_boot.start_builder(local, lib, tmp_path) == (None, None)
+
+
+async def test_builder_busy_is_503(
+    bclient: httpx.AsyncClient, manager: JobManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from supertonic_server.core.errors import builder_busy
+
+    async def busy(*args: Any, **kwargs: Any) -> Any:
+        raise builder_busy()
+
+    monkeypatch.setattr(manager, "submit", busy)
+    r = await bclient.post("/v1/voices/build", data=FORM, files=_files())
+    assert r.status_code == 503 and r.json()["error"]["code"] == "builder_busy"
+
+
+async def test_blank_source_note(bclient: httpx.AsyncClient) -> None:
+    r = await bclient.post("/v1/voices/build", data={**FORM, "source_note": "  "}, files=_files())
+    err = r.json()["error"]
+    assert r.status_code == 400 and err["code"] == "consent_required"
+    assert err["param"] == "source_note"
+
+
+async def test_zero_byte_file(bclient: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    from supertonic_server.builder import audio_prep
+
+    monkeypatch.setattr(jobs, "prepare_reference", audio_prep.prepare_reference)
+    empty = [("files", ("empty.wav", b"", "audio/wav"))]
+    r = await bclient.post("/v1/voices/build", data=FORM, files=empty)
+    assert r.status_code == 400 and r.json()["error"]["code"] == "invalid_reference_audio"
+
+
+async def test_unknown_job_cancel_and_finish(bclient: httpx.AsyncClient) -> None:
+    for r in (await bclient.delete("/v1/jobs/nope"), await bclient.post("/v1/jobs/nope/finish")):
+        assert r.status_code == 404 and r.json()["error"]["code"] == "job_not_found"
+
+
+async def test_delete_requires_auth(
+    settings: Settings,
+    engine: Engine,
+    lib: VoiceLibrary,
+    manager: JobManager,
+    app_client: AppClient,
+) -> None:
+    keyed = settings.model_copy(update={"api_key": "secret"})
+    async with app_client(create_app(keyed, engine, lib, manager)) as c:
+        assert (await c.delete("/v1/jobs/x")).status_code == 401
+
+
+async def test_text_entry_under_files_rejected(bclient: httpx.AsyncClient) -> None:
+    r = await bclient.post("/v1/voices/build", data={**FORM, "files": "oops"})
+    err = r.json()["error"]
+    assert r.status_code == 400 and err["param"] == "files" and "file uploads" in err["message"]
+    mixed = await bclient.post("/v1/voices/build", data={**FORM, "files": "oops"}, files=_files())
+    assert mixed.status_code == 400 and mixed.json()["error"]["param"] == "files"
+
+
+@pytest.mark.parametrize(
+    ("extra", "param"),
+    [
+        ({"description": "x" * 501}, "description"),
+        ({"tags": ",".join("t" for _ in range(21))}, "tags"),
+        ({"tags": "x" * 41}, "tags"),
+    ],
+)
+async def test_description_and_tag_bounds(
+    bclient: httpx.AsyncClient, extra: dict[str, str], param: str
+) -> None:
+    r = await bclient.post("/v1/voices/build", data={**FORM, **extra}, files=_files())
+    err = r.json()["error"]
+    assert r.status_code == 400 and err["code"] == "invalid_request" and err["param"] == param
+
+
+def test_builder_needs_engine_and_library(settings: Settings, manager: JobManager) -> None:
+    with pytest.raises(ValueError, match="injected builder"):
+        create_app(settings, builder=manager)
+
+
+class _FakeBuilder:
+    def __init__(self) -> None:
+        self.closed = False
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+def _boot_app(
+    settings: Settings, engine: Engine, lib: VoiceLibrary, monkeypatch: pytest.MonkeyPatch
+) -> FastAPI:
+    from supertonic_server.api import app as app_mod
+
+    monkeypatch.setattr(app_mod, "load_engine", lambda s: (engine, lib.presets_dir))
+    return create_app(settings)
+
+
+async def test_lifespan_assigns_and_closes_builder(
+    settings: Settings,
+    engine: Engine,
+    lib: VoiceLibrary,
+    monkeypatch: pytest.MonkeyPatch,
+    app_client: AppClient,
+) -> None:
+    from supertonic_server.api import app as app_mod
+
+    fake = _FakeBuilder()
+
+    async def boot(*args: Any) -> Any:
+        return fake, {"device": "X", "vram_mb": 1, "methods": ["fast"]}
+
+    monkeypatch.setattr(app_mod, "start_builder", boot)
+    app = _boot_app(settings, engine, lib, monkeypatch)
+    async with app.router.lifespan_context(app):
+        assert app.state.app_state.builder is fake
+        async with app_client(app) as c:
+            assert (await c.get("/v1/health")).json()["builder"] == "local"
+    assert fake.closed
+
+
+@pytest.mark.parametrize("failure", ["probe", "start"])
+async def test_builder_failure_does_not_stop_server(
+    settings: Settings,
+    engine: Engine,
+    lib: VoiceLibrary,
+    monkeypatch: pytest.MonkeyPatch,
+    app_client: AppClient,
+    failure: str,
+) -> None:
+    from supertonic_server.api import builder_boot
+    from supertonic_server.builder.availability import ProbeResult
+
+    def probe() -> ProbeResult:
+        if failure == "probe":
+            raise RuntimeError("probe exploded")
+        return ProbeResult(True, "ok", "GPU", 1, ("fast",))
+
+    async def bad_start(self: JobManager) -> None:
+        raise OSError("disk gone")
+
+    monkeypatch.setattr(builder_boot, "detect_local_builder", probe)
+    monkeypatch.setattr(JobManager, "start", bad_start)
+    closed: list[bool] = []
+    monkeypatch.setattr(engine.scheduler, "close", lambda: closed.append(True))
+    app = _boot_app(settings, engine, lib, monkeypatch)
+    async with app.router.lifespan_context(app), app_client(app) as c:
+        health = (await c.get("/v1/health")).json()
+        assert health["builder"] == "none" and health["builder_detail"] is None
+    assert closed == [True]

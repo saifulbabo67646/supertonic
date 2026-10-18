@@ -36,6 +36,8 @@ def create_app(
     """
     if (engine is None) != (library is None):
         raise ValueError("pass both engine and library, or neither")
+    if builder is not None and engine is None:
+        raise ValueError("an injected builder needs an injected engine and library")
     check_startup(settings)
 
     @asynccontextmanager
@@ -45,17 +47,23 @@ def create_app(
             eng, presets = load_engine(settings)
             lib = VoiceLibrary(presets, settings.custom_voices_dir)
             state = AppState(settings, eng, lib)
-            state.builder, state.builder_detail = await start_builder(settings, lib, presets.parent)
             app.state.app_state = state
             loaded = True
         try:
+            if loaded:
+                state = app.state.app_state
+                state.builder, state.builder_detail = await start_builder(
+                    settings, state.library, presets.parent
+                )
             yield
         finally:
             if loaded:
                 started = app.state.app_state.builder
-                if started is not None:
-                    await started.close()
-                app.state.app_state.engine.scheduler.close()
+                try:
+                    if started is not None:
+                        await started.close()
+                finally:
+                    app.state.app_state.engine.scheduler.close()
 
     app = FastAPI(title="Supertonic Server", lifespan=lifespan)
     if engine is not None and library is not None:

@@ -37,7 +37,12 @@ async def build_voice(request: Request, state: State) -> dict[str, Any]:
     """Queue a voice build from 1-3 reference recordings (multipart); returns the job."""
     builder = _builder(state)
     form = await request.form()
-    uploads = [f for f in form.getlist("files") if isinstance(f, UploadFile)]
+    entries = form.getlist("files")
+    uploads = [f for f in entries if isinstance(f, UploadFile)]
+    if len(uploads) != len(entries):
+        raise ApiError(
+            400, "invalid_request", "files entries must be file uploads, not text", param="files"
+        )
     if not 1 <= len(uploads) <= MAX_FILES:
         raise ApiError(
             400, "invalid_request", f"provide 1 to {MAX_FILES} audio files", param="files"

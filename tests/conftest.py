@@ -71,8 +71,14 @@ def settings(tmp_path: Path) -> Settings:
     return Settings(data_dir=tmp_path / "data")
 
 
-def _client(app: FastAPI) -> httpx.AsyncClient:
+def make_client(app: FastAPI) -> httpx.AsyncClient:
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
+
+
+@pytest.fixture
+def app_client() -> Callable[[FastAPI], httpx.AsyncClient]:
+    """Factory wrapping an app in an in-process ``httpx.AsyncClient``."""
+    return make_client
 
 
 @pytest.fixture
@@ -80,7 +86,7 @@ async def client(
     settings: Settings, engine: Engine, lib: VoiceLibrary
 ) -> AsyncIterator[AsyncClient]:
     """Client for an app without authentication."""
-    async with _client(create_app(settings, engine, lib)) as c:
+    async with make_client(create_app(settings, engine, lib)) as c:
         yield c
 
 
@@ -90,7 +96,7 @@ async def authed_client(
 ) -> AsyncIterator[AsyncClient]:
     """Client for an app that requires the API key ``"secret"``."""
     keyed = settings.model_copy(update={"api_key": "secret"})
-    async with _client(create_app(keyed, engine, lib)) as c:
+    async with make_client(create_app(keyed, engine, lib)) as c:
         yield c
 
 

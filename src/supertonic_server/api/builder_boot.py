@@ -24,7 +24,20 @@ def detail_for(builder: Builder) -> dict[str, Any]:
 async def start_builder(
     settings: Settings, library: VoiceLibrary, model_dir: Path
 ) -> tuple[Builder | None, dict[str, Any] | None]:
-    """Return the started builder and its health detail, or ``(None, None)`` when there is none."""
+    """Return the started builder and its health detail, or ``(None, None)`` when there is none.
+
+    A failing probe or start never stops the server: it is logged and building is disabled.
+    """
+    try:
+        return await _start(settings, library, model_dir)
+    except Exception:
+        logger.exception("voice builder failed to start; voice building is disabled")
+        return None, None
+
+
+async def _start(
+    settings: Settings, library: VoiceLibrary, model_dir: Path
+) -> tuple[Builder | None, dict[str, Any] | None]:
     if settings.builder == "off":
         return None, None
     if settings.builder_url:
