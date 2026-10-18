@@ -1,6 +1,7 @@
-"""Route modules. Add new routers to :data:`ROUTERS` to mount them behind the API key.
+"""Route modules. Add new routers to :data:`ROUTERS` to mount them.
 
-Routers in :data:`PUBLIC_ROUTERS` are mounted without the key dependency.
+Authentication is not a router concern: :class:`~supertonic_server.api.guard.Guard`
+protects every ``/v1/*`` path except ``GET /v1/health`` before the request is routed.
 """
 
 from fastapi import APIRouter
@@ -13,10 +14,5 @@ ROUTERS: list[APIRouter] = [
     openai_speech.router,
     voices.router,
     timestamps.router,
-]
-PUBLIC_ROUTERS: list[APIRouter] = [
-    system.public_router,
-    # The realtime socket authenticates inside its handler: an HTTP ``require_key`` failure
-    # would reject the handshake without telling the client why.
     realtime.router,
 ]

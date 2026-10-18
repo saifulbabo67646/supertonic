@@ -57,10 +57,7 @@ def _json_dict(raw: bytes | str, param: str) -> dict[str, Any]:
 
 async def _read_import(request: Request) -> dict[str, Any]:
     """Normalise JSON and multipart import bodies to ``{style, name, ...}``."""
-    declared = request.headers.get("content-length", "")
-    # Multipart framing adds a little overhead on top of the file itself.
-    if declared.isdigit() and int(declared) > MAX_STYLE_BYTES + 64 * 1024:
-        raise _too_large()
+    # The guard already caps the whole body (style plus multipart framing) while it streams.
     if request.headers.get("content-type", "").startswith("multipart/"):
         form = await request.form()
         upload = form.get("file")

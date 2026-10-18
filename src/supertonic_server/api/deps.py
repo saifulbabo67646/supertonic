@@ -1,15 +1,13 @@
-"""Shared API state, auth dependency and preview generation."""
+"""Shared API state and preview generation."""
 
 from __future__ import annotations
 
 import asyncio
-import hmac
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from fastapi import Request
-from starlette.requests import HTTPConnection
 
 from supertonic_server.audio import encode
 from supertonic_server.core.errors import ApiError
@@ -41,24 +39,6 @@ def get_state(request: Request) -> AppState:
     if state is None:
         raise ApiError(503, "not_ready", "Model is still loading", type_="server_error")
     return state
-
-
-def bearer_token(conn: HTTPConnection) -> str:
-    """Return the token of an ``Authorization: Bearer`` header, or ``""``."""
-    header = conn.headers.get("authorization", "")
-    scheme, _, token = header.partition(" ")
-    return token.strip() if scheme.lower() == "bearer" else ""
-
-
-async def require_key(request: Request) -> None:
-    """Reject the request unless it carries the configured API key (if one is set)."""
-    key = request.app.state.api_key
-    if not key:
-        return
-    if not hmac.compare_digest(bearer_token(request).encode(), key.encode()):
-        raise ApiError(
-            401, "invalid_api_key", "Incorrect or missing API key", type_="authentication_error"
-        )
 
 
 async def preview(state: AppState, voice_id: str, lang: str) -> Path:

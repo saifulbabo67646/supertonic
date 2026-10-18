@@ -2,23 +2,20 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Any
+from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 
 import supertonic_server
-from supertonic_server.api.deps import AppState, get_state
+from supertonic_server.api.routes._common import State
 from supertonic_server.text import LANGUAGES
 
-public_router = APIRouter(prefix="/v1")
 router = APIRouter(prefix="/v1")
 
-State = Annotated[AppState, Depends(get_state)]
 
-
-@public_router.get("/health")
+@router.get("/health")
 async def health(state: State) -> dict[str, Any]:
-    """Liveness and basic server info; never requires auth."""
+    """Liveness and basic server info; ``GET`` never requires auth (see the guard)."""
     return {
         "status": "ok",
         "model": "supertonic-3",

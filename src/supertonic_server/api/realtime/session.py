@@ -1,15 +1,14 @@
 """Realtime TTS WebSocket: event dispatch, ordered synthesis and barge-in.
 
 Each context (see :mod:`.context`) owns a sentence buffer, an ordered queue of sentences
-and one consumer task, so audio of a context is always in order while different
-contexts synthesise concurrently (at most :data:`MAX_ACTIVE_CONTEXTS` at a time per
-socket). Every outgoing event goes through one :class:`~.outbox.Outbox`, so frames never
+and at most one consumer task (started on demand, gone once the queue drains), so audio of
+a context is always in order while different contexts synthesise concurrently (at most
+:data:`MAX_ACTIVE_CONTEXTS` at a time per socket). Up to :data:`MAX_CONTEXTS` contexts may
+be live at once; idle ones are forgotten, oldest first, when room is needed.
+
+Every outgoing event goes through one :class:`~.outbox.Outbox`, so frames never
 interleave, cancelling a context can also discard its unsent audio, and a client that stops
 reading pauses synthesis. Text not yet synthesised is capped at :data:`MAX_PENDING_CHARS`.
-
-Authentication: send ``Authorization: Bearer <key>`` when the client can set headers. The
-``?api_key=`` query parameter exists for browsers, whose WebSocket API cannot set headers;
-query strings tend to end up in proxy and access logs, so prefer the header.
 """
 
 from __future__ import annotations
@@ -22,13 +21,13 @@ from functools import partial
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
-from fastapi import APIRouter, WebSocket
+from fastapi import WebSocket
 from starlette.websockets import WebSocketDisconnect
 
 from supertonic_server.api.realtime import protocol as p
 from supertonic_server.api.realtime.context import Context, Entry
 from supertonic_server.api.realtime.outbox import Outbox
-from supertonic_server.api.realtime.params import ConnectParams, Voicing, check_key, parse_params
+from supertonic_server.api.realtime.params import ConnectParams, Voicing
 from supertonic_server.audio import resample, to_pcm16
 from supertonic_server.core.errors import ApiError
 from supertonic_server.engine import PRIORITY_REALTIME
@@ -39,8 +38,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
-
 MAX_CONTEXTS = 32
 """Live contexts one socket may hold; idle ones are forgotten (oldest first) to make room."""
 
@@ -49,9 +46,6 @@ MAX_ACTIVE_CONTEXTS = 4
 
 MAX_PENDING_CHARS = MAX_INPUT_CHARS
 """Buffered plus queued (not yet synthesised) characters allowed per socket."""
-
-_POLICY_VIOLATION = 1008
-_TRY_AGAIN_LATER = 1013
 
 
 def _pcm_base64(audio: np.ndarray, src_rate: int, rate: int) -> str:
@@ -291,35 +285,3 @@ class Session:
             ctx.item_id = None
             ctx.buffer.clear()
         self.emit(p.tts_failed(exc, ctx.id, item_id))
-
-
-@router.websocket("/v1/audio/speech/websocket")
-async def speech_websocket(ws: WebSocket) -> None:
-    """Realtime TTS: text streamed in, base64 PCM16 sentences streamed out.
-
-    Authentication happens here (``Authorization: Bearer`` or ``?api_key=``): the socket is
-    accepted first so the client gets a ``conversation.item.tts.failed`` event explaining
-    the rejection before the 1008 close.
-    """
-    await ws.accept()
-    state: AppState | None = getattr(ws.app.state, "app_state", None)
-    if state is None:
-        exc = ApiError(503, "not_ready", "Model is still loading", type_="server_error")
-        await _reject(ws, exc, _TRY_AGAIN_LATER)
-        return
-    try:
-        check_key(ws, state.settings.api_key)
-        params = parse_params(ws.query_params, state)
-    except ApiError as exc:
-        await _reject(ws, exc, _POLICY_VIOLATION)
-        return
-    await Session(ws, state, params).run()
-
-
-async def _reject(ws: WebSocket, exc: ApiError, close_code: int) -> None:
-    """Explain a refused connection, then close it (quietly if the client already left)."""
-    try:
-        await ws.send_json(p.tts_failed(exc, None))
-        await ws.close(close_code)
-    except (WebSocketDisconnect, RuntimeError, OSError) as err:
-        logger.debug("realtime client left during rejection: %r", err)

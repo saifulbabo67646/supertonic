@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import hmac
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
-from supertonic_server.api.deps import bearer_token
 from supertonic_server.audio import ALLOWED_RATES
 from supertonic_server.core.errors import ApiError
 from supertonic_server.engine.engine import DEFAULT_SPEED, MAX_SPEED, MIN_SPEED
@@ -14,7 +12,6 @@ from supertonic_server.text import get_language
 
 if TYPE_CHECKING:
     from starlette.datastructures import QueryParams
-    from starlette.requests import HTTPConnection
     from supertonic.core import Style
 
     from supertonic_server.api.deps import AppState
@@ -71,17 +68,6 @@ def check_speed(speed: float) -> float:
             param="speed",
         )
     return speed
-
-
-def check_key(conn: HTTPConnection, expected: str | None) -> None:
-    """Accept a bearer header or ``?api_key=``; raise ``invalid_api_key`` otherwise."""
-    if not expected:
-        return
-    supplied = bearer_token(conn) or conn.query_params.get("api_key", "")
-    if not hmac.compare_digest(supplied.encode(), expected.encode()):
-        raise ApiError(
-            401, "invalid_api_key", "Incorrect or missing API key", type_="authentication_error"
-        )
 
 
 def _number(query: QueryParams, name: str, default: str, kind: type[float] | type[int]) -> float:

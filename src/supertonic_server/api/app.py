@@ -8,12 +8,13 @@ from contextlib import asynccontextmanager
 from importlib.resources import files
 from pathlib import Path
 
-from fastapi import Depends, FastAPI
+from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from supertonic_server.api.deps import AppState, require_key
+from supertonic_server.api.deps import AppState
 from supertonic_server.api.errors import install_error_handlers
-from supertonic_server.api.routes import PUBLIC_ROUTERS, ROUTERS
+from supertonic_server.api.guard import Guard
+from supertonic_server.api.routes import ROUTERS
 from supertonic_server.core.config import Settings, check_startup
 from supertonic_server.engine import Engine, load_engine
 from supertonic_server.voices import VoiceLibrary
@@ -45,14 +46,13 @@ def create_app(
                 app.state.app_state.engine.scheduler.close()
 
     app = FastAPI(title="Supertonic Server", lifespan=lifespan)
-    app.state.api_key = settings.api_key
     if engine is not None and library is not None:
         app.state.app_state = AppState(settings, engine, library)
     install_error_handlers(app)
-    for router in PUBLIC_ROUTERS:
-        app.include_router(router)
+    # Auth, the forwarded-header check and the body cap run before routing and parsing.
+    app.add_middleware(Guard, api_key=settings.api_key)
     for router in ROUTERS:
-        app.include_router(router, dependencies=[Depends(require_key)])
+        app.include_router(router)
     # ES modules need a JavaScript MIME type; some Windows registries map .js to text/plain.
     mimetypes.add_type("text/javascript", ".js")
     web = Path(str(files("supertonic_server") / "web"))
