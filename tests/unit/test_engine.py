@@ -296,3 +296,22 @@ async def test_realtime_has_its_own_queue_reserve() -> None:
     assert await asyncio.gather(*bulk) == ["b", "b"]
     await running
     sched.close()
+
+
+async def test_render_is_capped(engine: Engine, style: Style) -> None:
+    """Full renders hold all audio in memory, so they accept less text than streams (I7)."""
+    from supertonic_server.engine.engine import MAX_RENDER_CHARS
+
+    with pytest.raises(ApiError) as e:
+        await engine.render("a" * (MAX_RENDER_CHARS + 1), style, "en")
+    assert e.value.code == "input_too_long" and "pcm" in e.value.message
+    assert engine.model.calls == []  # type: ignore[attr-defined]
+
+
+async def test_render_chunks_share_the_joined_buffer(engine: Engine, style: Style) -> None:
+    """Chunk audio is a view into the joined audio, not a second copy (I7)."""
+    audio, chunks = await engine.render("One. Two. Three.", style, "en")
+    assert len(chunks) == 3
+    assert all(np.shares_memory(c.audio, audio) for c in chunks)
+    gap = int(DEFAULT_SILENCE_DURATION * engine.sample_rate)
+    assert len(audio) == sum(len(c.audio) for c in chunks) + 2 * gap

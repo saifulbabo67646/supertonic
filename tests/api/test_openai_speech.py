@@ -177,3 +177,14 @@ async def test_pcm_is_the_realtime_path(
     assert r.status_code == 200
     assert [c[2] for c in engine.model.calls] == [steps]  # type: ignore[attr-defined]
     assert seen == [priority]
+
+
+@pytest.mark.parametrize(("fmt", "status"), [("mp3", 400), ("flac", 400), ("pcm", 200)])
+async def test_render_formats_are_capped(client: AsyncClient, fmt: str, status: int) -> None:
+    text = "Hello there. " * 1600  # 20 800 characters
+    body = {"input": text, "voice": "F1", "response_format": fmt}
+    r = await client.post("/v1/audio/speech", json=body)
+    assert r.status_code == status
+    if status == 400:
+        err = r.json()["error"]
+        assert err["code"] == "input_too_long" and "pcm" in err["message"]

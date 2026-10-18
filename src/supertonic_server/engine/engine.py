@@ -19,6 +19,9 @@ from supertonic_server.text import sanitize, split_sentences
 logger = logging.getLogger(__name__)
 
 MAX_INPUT_CHARS = 100_000
+"""Longest text accepted for streaming synthesis."""
+MAX_RENDER_CHARS = 20_000
+"""Longest text accepted by :meth:`Engine.render`, which holds the whole result in memory."""
 MIN_SPEED, MAX_SPEED = 0.7, 2.0
 MIN_STEPS, MAX_STEPS = 1, 100
 DEFAULT_SPEED = 1.05
@@ -132,17 +135,42 @@ class Engine:
     ) -> tuple[np.ndarray, list[Chunk]]:
         """Synthesise the whole text; chunks are joined with 300 ms of silence.
 
+        Each returned chunk's ``audio`` is a view into the joined array, so the result holds
+        one copy of the audio, not two.
+
         Returns:
             The joined float32 audio and the per-sentence chunks.
+
+        Raises:
+            ApiError: 400 ``input_too_long`` above :data:`MAX_RENDER_CHARS` characters (the
+                message points to streaming), plus everything :meth:`stream` raises.
         """
-        chunks = [c async for c in self.stream(text, style, lang, speed, steps, priority)]
+        if len(text) > MAX_RENDER_CHARS:
+            raise ApiError(
+                400,
+                "input_too_long",
+                f"Input is {len(text)} characters; complete files are limited to "
+                f'{MAX_RENDER_CHARS}. For longer text use response_format "pcm" or "wav" '
+                "on /v1/audio/speech, which stream sentence by sentence.",
+                param="input",
+            )
         gap = np.zeros(int(DEFAULT_SILENCE_DURATION * self.sample_rate), dtype=np.float32)
+        texts: list[str] = []
         parts: list[np.ndarray] = []
-        for i, chunk in enumerate(chunks):
-            if i:
+        async for chunk in self.stream(text, style, lang, speed, steps, priority):
+            if parts:
                 parts.append(gap)
+            texts.append(chunk.text)
             parts.append(chunk.audio)
-        return np.concatenate(parts).astype(np.float32, copy=False), chunks
+        joined = np.concatenate(parts).astype(np.float32, copy=False)
+        lengths = [len(a) for a in parts[::2]]
+        del parts  # drop the per-sentence arrays; only the joined copy remains
+        chunks: list[Chunk] = []
+        start = 0
+        for sentence, n in zip(texts, lengths, strict=True):
+            chunks.append(Chunk(sentence, joined[start : start + n]))
+            start += n + len(gap)
+        return joined, chunks
 
     def _run(self, sentence: str, style: Style, lang: str, speed: float, steps: int) -> np.ndarray:
         wav, dur = self.model([sentence], style, steps, speed, lang)

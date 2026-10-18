@@ -48,3 +48,8 @@ async def test_errors(client: AsyncClient) -> None:
     assert (await post(language="xx"))[0] == 400
     assert await post(speed=5) == (400, "invalid_speed")
     assert await post(text="😀") == (400, "empty_input")
+
+
+async def test_long_text_capped(client: AsyncClient) -> None:
+    r = await client.post("/v1/tts/timestamps", json={"text": "Hi. " * 5001, "voice": "F1"})
+    assert r.status_code == 400 and r.json()["error"]["code"] == "input_too_long"
