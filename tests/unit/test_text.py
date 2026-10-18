@@ -107,3 +107,36 @@ def test_sentence_buffer_clear() -> None:
     b.append("pending text")
     b.clear()
     assert b.flush() == []
+
+
+def test_split_hindi_and_arabic() -> None:
+    assert split_sentences("नमस्ते।आप कैसे हैं? ठीक हूँ।", "hi") == [
+        "नमस्ते।",
+        "आप कैसे हैं?",
+        "ठीक हूँ।",
+    ]
+    assert split_sentences("كيف حالك؟ أنا بخير.", "ar") == ["كيف حالك؟", "أنا بخير."]
+
+
+def test_split_keeps_closing_quote_with_sentence() -> None:
+    assert split_sentences('He said "hi." Next one.', "en") == ['He said "hi."', "Next one."]
+
+
+def test_sentence_buffer_hindi_danda() -> None:
+    b = SentenceBuffer()
+    assert b.append("नमस्ते। आप") == ["नमस्ते।"]
+    assert b.flush() == ["आप"]
+
+
+def test_sentence_buffer_closing_quote() -> None:
+    b = SentenceBuffer()
+    assert b.append('He said "hi." Nex') == ['He said "hi."']
+    assert b.flush() == ["Nex"]
+
+
+def test_sentence_buffer_korean_limit() -> None:
+    b = SentenceBuffer(lang="ko")
+    out = b.append(" ".join(["가나다"] * 60))
+    assert out and all(len(s) <= 120 for s in out)
+    assert all(len(s) <= 120 for s in b.flush())
+    assert SentenceBuffer(max_partial_length=50, lang="ko")._max_partial == 50

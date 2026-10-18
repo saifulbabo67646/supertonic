@@ -10,10 +10,16 @@ _MAX_LEN_BY_LANG = {"ko": 120}
 _SOFT_BREAKS = ",;:、"
 
 _PARAGRAPH = re.compile(r"\n\s*\n")
-_SENTENCE_END = re.compile(r"(?<=[。！？])\s*|(?<=[.!?])\s+")
+# Terminators needing no following space (CJK, Devanagari danda, Arabic question mark, ellipsis),
+# and optional closing quotes/brackets that stay attached to the sentence.
+_TERM = "。！？।॥؟…"
+_CLOSE = "\"'”’»」』）)\\]"
+_SENTENCE = re.compile(
+    rf"(.*?(?:[{_TERM}]+[{_CLOSE}]*|[.!?]+[{_CLOSE}]*(?=\s|\Z))|.+)\s*", re.DOTALL
+)
 _WHITESPACE = re.compile(r"\s+")
-# A sentence is complete after 。！？ or after .!? followed by whitespace.
-_COMPLETE = re.compile(r"[。！？]|[.!?]\s|\n\s*\n")
+# A buffered sentence is complete after a no-space terminator or .!? plus whitespace.
+_COMPLETE = re.compile(rf"[{_TERM}]+[{_CLOSE}]*|[.!?]+[{_CLOSE}]*\s|\n\s*\n")
 
 
 def sanitize(text: str, unsupported: Callable[[str], list[str]]) -> str:
@@ -56,11 +62,15 @@ def _split(text: str, max_len: int) -> list[str]:
     sentences: list[str] = []
     for paragraph in _PARAGRAPH.split(text):
         paragraph = _WHITESPACE.sub(" ", paragraph).strip()
-        for sentence in _SENTENCE_END.split(paragraph):
+        for sentence in _SENTENCE.findall(paragraph):
             sentence = sentence.strip()
             if sentence:
                 sentences.extend(_split_long(sentence, max_len))
     return sentences
+
+
+def _default_max_len(lang: str) -> int:
+    return _MAX_LEN_BY_LANG.get(lang, DEFAULT_MAX_LEN)
 
 
 def split_sentences(text: str, lang: str, max_len: int | None = None) -> list[str]:
@@ -77,7 +87,7 @@ def split_sentences(text: str, lang: str, max_len: int | None = None) -> list[st
     Returns:
         Non-empty sentences in order.
     """
-    limit = max_len if max_len is not None else _MAX_LEN_BY_LANG.get(lang, DEFAULT_MAX_LEN)
+    limit = max_len if max_len is not None else _default_max_len(lang)
     return _split(text, limit)
 
 
@@ -87,10 +97,13 @@ class SentenceBuffer:
     Args:
         max_partial_length: When the unfinished remainder grows past this, it is
             emitted up to the last word boundary so synthesis is not stalled.
+        lang: Language code; emitted pieces respect the same per-language length
+            limit as :func:`split_sentences` (120 for Korean, 300 otherwise).
     """
 
-    def __init__(self, max_partial_length: int = 250) -> None:
-        self._max_partial = max_partial_length
+    def __init__(self, max_partial_length: int = 250, *, lang: str = "en") -> None:
+        self._max_len = _default_max_len(lang)
+        self._max_partial = min(max_partial_length, self._max_len)
         self._buf = ""
 
     def append(self, text: str) -> list[str]:
@@ -101,7 +114,7 @@ class SentenceBuffer:
         for match in _COMPLETE.finditer(self._buf):
             end = match.end()
         if end:
-            out.extend(_split(self._buf[:end], DEFAULT_MAX_LEN))
+            out.extend(_split(self._buf[:end], self._max_len))
             self._buf = self._buf[end:].lstrip()
         while len(self._buf) > self._max_partial:
             cut = _cut_point(self._buf, self._max_partial)
@@ -113,7 +126,7 @@ class SentenceBuffer:
     def flush(self) -> list[str]:
         """Return whatever text remains (if any) and reset the buffer."""
         rest, self._buf = self._buf, ""
-        return _split(rest, DEFAULT_MAX_LEN)
+        return _split(rest, self._max_len)
 
     def clear(self) -> None:
         """Discard any buffered text."""
