@@ -6,6 +6,7 @@ supertonic_server.builder.worker --self-test`` and parses its single JSON line.
 
 from __future__ import annotations
 
+import contextlib
 import functools
 import json
 import logging
@@ -16,6 +17,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from supertonic_server.builder.models import BUILD_METHODS, BuildMethod
+from supertonic_server.builder.process import KILL_WAIT_S, group_kwargs, kill_tree_sync
 
 logger = logging.getLogger(__name__)
 
@@ -85,28 +87,46 @@ def _parse(stdout: str) -> ProbeResult:
 def detect_local_builder(python: str = sys.executable, timeout_s: float = 60) -> ProbeResult:
     """Probe the local builder once per process (``detect_local_builder.cache_clear()`` resets).
 
+    Blocking (it waits for a child interpreter, up to ``timeout_s`` plus a few seconds): call
+    it from async code via ``asyncio.to_thread``. The self-test runs in its own process
+    group, and the whole group is killed on timeout, so a descendant holding the pipes cannot
+    keep the probe waiting.
+
     Args:
         python: Interpreter that has (or lacks) the ``builder`` extra.
         timeout_s: Give up on the self-test after this many seconds.
     """
     env = {**os.environ, "PYTHONUTF8": "1"}
     try:
-        proc = subprocess.run(
+        proc = subprocess.Popen(
             _self_test_cmd(python),
-            capture_output=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
             encoding="utf-8",
             errors="replace",
-            timeout=timeout_s,
             env=env,
-            stdin=subprocess.DEVNULL,
-            check=False,
+            **group_kwargs(),
         )
-    except subprocess.TimeoutExpired:
-        result = _unavailable(f"builder self-test timed out after {timeout_s:g} s")
     except OSError as exc:
         result = _unavailable(f"builder self-test could not start: {exc}")
     else:
-        result = _parse(proc.stdout)
+        try:
+            stdout, _ = proc.communicate(timeout=timeout_s)
+        except subprocess.TimeoutExpired:
+            kill_tree_sync(proc.pid)
+            try:
+                proc.communicate(timeout=KILL_WAIT_S)
+            except subprocess.TimeoutExpired:  # a straggler outside the tree holds the pipes
+                proc.kill()
+                for pipe in (proc.stdout, proc.stderr):
+                    if pipe is not None:
+                        with contextlib.suppress(OSError):
+                            pipe.close()
+                proc.wait()
+            result = _unavailable(f"builder self-test timed out after {timeout_s:g} s")
+        else:
+            result = _parse(stdout)
     logger.info("local voice builder: %s", result)
     return result

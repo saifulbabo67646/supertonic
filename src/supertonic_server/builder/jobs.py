@@ -10,7 +10,6 @@ from __future__ import annotations
 import asyncio
 import builtins
 import contextlib
-import json
 import logging
 import os
 import shutil
@@ -19,14 +18,23 @@ import time
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
 from supertonic_server.builder.audio_prep import prepare_reference
-from supertonic_server.builder.models import BUILD_METHODS, BuildMethod, BuildRequest, Job
+from supertonic_server.builder.jobstore import (
+    REFERENCE,
+    discard_working_files,
+    load_jobs,
+    now_iso,
+    read_style,
+    write_job,
+)
+from supertonic_server.builder.models import BUILD_METHODS, BuildMethod, BuildRequest, Job, JobState
 from supertonic_server.builder.process import KILL_WAIT_S, kill_tree, spawn
 from supertonic_server.builder.runlog import RunLog
+from supertonic_server.core import errors
 from supertonic_server.core.errors import ApiError
 from supertonic_server.voices.library import VoiceLibrary
 
@@ -34,17 +42,7 @@ logger = logging.getLogger(__name__)
 
 WORKER_MODULE = "supertonic_server.builder.worker"
 PRUNE_AFTER = timedelta(days=7)
-REFERENCE = "reference.wav"
-WORKING_FILES = (REFERENCE, "style.json", "report.json", "STOP")
 TERMINAL = frozenset({"succeeded", "failed", "cancelled"})
-
-
-def _now() -> str:
-    return datetime.now(UTC).isoformat()
-
-
-def _not_found(job_id: str) -> ApiError:
-    return ApiError(404, "job_not_found", f"Job '{job_id}' not found", param="job_id")
 
 
 @dataclass
@@ -54,6 +52,8 @@ class _Run:
     job: Job
     proc: asyncio.subprocess.Process | None = None
     cancelled: bool = False
+    exited: bool = False
+    """The worker is gone (the result is being imported)."""
     finished: asyncio.Event = field(default_factory=asyncio.Event)
 
 
@@ -93,6 +93,7 @@ class JobManager:
         self._jobs: dict[str, Job] = {}
         self._queue: asyncio.Queue[str] = asyncio.Queue()
         self._preparing = 0
+        self._closed = False
         self._current: _Run | None = None
         self._runner: asyncio.Task[None] | None = None
 
@@ -104,24 +105,19 @@ class JobManager:
     async def start(self) -> None:
         """Load jobs from disk (interrupted ones fail, old ones are pruned); start the runner."""
         self._root.mkdir(parents=True, exist_ok=True)
-        cutoff = datetime.now(UTC) - PRUNE_AFTER
-        for meta in self._root.glob("*/job.json"):
-            try:
-                job = Job.from_dict(json.loads(meta.read_text(encoding="utf-8")))
-                created = datetime.fromisoformat(job.created_at)
-            except (OSError, ValueError, KeyError, TypeError) as exc:
-                logger.warning("skipping unreadable job %s: %s", meta, exc)
-                continue
-            if created < cutoff:
-                shutil.rmtree(meta.parent, ignore_errors=True)
-                continue
+        self._closed = False
+        for job in load_jobs(self._root, PRUNE_AFTER):
             self._jobs[job.id] = job
             if job.state not in TERMINAL:
                 self._settle(job, "failed", {"code": "interrupted", "message": "server restarted"})
         self._runner = asyncio.create_task(self._run_forever(), name="voice-builder")
 
     async def close(self) -> None:
-        """Cancel the running job and stop the runner; queued jobs stay queued on disk."""
+        """Refuse new builds, cancel the running job and stop the runner.
+
+        Queued jobs stay queued on disk (the next ``start`` marks them ``interrupted``).
+        """
+        self._closed = True
         if self._current is not None:
             await self.cancel(self._current.job.id)
         if self._runner is not None:
@@ -137,25 +133,16 @@ class JobManager:
 
         Raises:
             ApiError: 400 for a bad request, audio or ``method_unavailable``; 503
-                ``builder_busy`` when ``max_waiting`` jobs are already waiting.
+                ``builder_busy`` when ``max_waiting`` jobs are already waiting, or
+                ``builder_unavailable`` once the manager is closing.
         """
+        self._check_open()
         req.validate()
         if req.method not in self._methods:
-            raise ApiError(
-                400,
-                "method_unavailable",
-                f"method {req.method!r} is not available on this builder "
-                f"(available: {', '.join(self._methods) or 'none'})",
-                param="method",
-            )
+            raise errors.method_unavailable(req.method, self._methods)
         waiting = sum(j.state == "queued" for j in self._jobs.values()) + self._preparing
         if waiting >= self._max_waiting:
-            raise ApiError(
-                503,
-                "builder_busy",
-                "Voice builder queue is full; retry later",
-                type_="server_error",
-            )
+            raise errors.builder_busy()
         job_id = uuid.uuid4().hex
         folder = self._root / job_id
         self._preparing += 1
@@ -167,17 +154,24 @@ class JobManager:
             raise
         finally:
             self._preparing -= 1
-        job = Job(job_id, "queued", req, _now(), None, None, None, None, None, builder_label)
+        if self._closed:  # closed while the audio was being prepared
+            shutil.rmtree(folder, ignore_errors=True)
+            self._check_open()
+        job = Job(job_id, "queued", req, now_iso(), None, None, None, None, None, builder_label)
         self._jobs[job_id] = job
         self._persist(job)
         self._queue.put_nowait(job_id)
         return job
 
+    def _check_open(self) -> None:
+        if self._closed:
+            raise errors.builder_unavailable("Voice builder is shutting down")
+
     def get(self, job_id: str) -> Job:
         """Return a job or raise 404 ``job_not_found``."""
         job = self._jobs.get(job_id)
         if job is None:
-            raise _not_found(job_id)
+            raise errors.job_not_found(job_id)
         return job
 
     def list(self, limit: int = 50) -> builtins.list[Job]:
@@ -206,8 +200,9 @@ class JobManager:
         """
         job = self.get(job_id)
         if job.state == "queued":
-            raise ApiError(409, "job_not_running", f"Job '{job_id}' has not started yet")
-        if job.state == "running" and not job.stopping:
+            raise errors.job_not_running(job_id)
+        run = self._current
+        if run is not None and run.job is job and not run.exited and not job.stopping:
             (self._root / job_id / "STOP").touch()
             job.stopping = True
             self._persist(job)
@@ -216,19 +211,22 @@ class JobManager:
     # -- internals ---------------------------------------------------------------------
 
     def _persist(self, job: Job) -> None:
-        folder = self._root / job.id
-        tmp = folder / "job.json.tmp"
-        tmp.write_text(json.dumps(job.to_dict(), ensure_ascii=False), encoding="utf-8")
-        os.replace(tmp, folder / "job.json")
+        write_job(self._root / job.id, job)
 
-    def _settle(self, job: Job, state: Any, error: dict[str, Any] | None) -> None:
-        """Move ``job`` to a terminal state, drop its working files and persist."""
+    def _settle(self, job: Job, state: JobState, error: dict[str, Any] | None) -> None:
+        """Move ``job`` to a terminal state, drop its working files and persist.
+
+        Never raises for file errors: the in-memory job is authoritative, and a working file
+        that cannot be removed must not keep the terminal state off disk.
+        """
         job.state = state
         job.error = error
-        job.finished_at = _now()
-        for name in WORKING_FILES:
-            (self._root / job.id / name).unlink(missing_ok=True)
-        self._persist(job)
+        job.finished_at = now_iso()
+        discard_working_files(self._root / job.id)
+        try:
+            self._persist(job)
+        except OSError:
+            logger.exception("job %s: could not save its %s state", job.id, state)
 
     async def _run_forever(self) -> None:
         while True:
@@ -253,7 +251,7 @@ class JobManager:
     async def _run(self, run: _Run) -> None:
         job = run.job
         folder = self._root / job.id
-        job.state, job.started_at = "running", _now()
+        job.state, job.started_at = "running", now_iso()
         self._persist(job)
         cmd = [
             *self._cmd,
@@ -275,6 +273,7 @@ class JobManager:
             if run.cancelled:
                 await kill_tree(proc)
             timed_out = await log.follow(proc, self._timeout_s)
+        run.exited = True
         seconds = round(time.monotonic() - started, 1)
         if run.cancelled:
             self._settle(job, "cancelled", None)
@@ -282,14 +281,20 @@ class JobManager:
             limit = f"{self._timeout_s / 60:g} min"
             self._settle(job, "failed", {"code": "timeout", "message": f"build exceeded {limit}"})
         elif log.report is not None and proc.returncode == 0:
-            await self._import(job, log.report, seconds)
+            importing = asyncio.ensure_future(self._import(job, log.report, seconds))
+            try:
+                await asyncio.shield(importing)
+            except asyncio.CancelledError:  # close(): finish the import, never half-record it
+                await importing
+                raise
         else:
             self._settle(job, "failed", log.failure(proc.returncode))
 
     async def _import(self, job: Job, report: dict[str, Any], seconds: float) -> None:
         req = job.request
         try:
-            style = json.loads((self._root / job.id / "style.json").read_text(encoding="utf-8"))
+            style = read_style(self._root / job.id)
+            extra = {**report, "builder": job.builder, "seconds": seconds}
             voice = await asyncio.to_thread(
                 self._library.import_style,
                 style,
@@ -297,7 +302,7 @@ class JobManager:
                 req.description,
                 req.tags,
                 req.source_note,
-                extra={**report, "builder": job.builder, "seconds": seconds},
+                extra=extra,
             )
         except (OSError, ValueError, ApiError) as exc:
             message = exc.message if isinstance(exc, ApiError) else str(exc)

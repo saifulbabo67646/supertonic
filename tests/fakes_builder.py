@@ -9,8 +9,9 @@ arguments. Behaviour comes from the environment:
 
   - ``ok``: two progress events, then ``done``.
   - ``noisy``: like ``ok`` with a non-JSON line on stdout first.
-  - ``gate``: one progress event, then waits for ``<dir>/go`` or the stop file, then ``done``
-    (``stopped_early`` true when the stop file ended the wait).
+  - ``flood``: like ``noisy`` plus ~1 MB of progress lines and stderr (fills any pipe buffer).
+  - ``gate``: ``loading`` and one ``timbre`` step, then waits for ``<dir>/go`` or the stop
+    file, then ``done`` (``stopped_early`` true when the stop file ended the wait).
   - ``hang``: starts a sleeping child process (the "tree"), then sleeps, ignoring the stop file.
   - ``crash``: a progress event and a traceback on stderr, then exit code 3, no terminal event.
   - ``error:<code>``: an error event with ``code`` (exit code 1).
@@ -104,10 +105,15 @@ def main() -> int:
             {"type": "error", "code": mode.split(":", 1)[1], "message": f"fake failure: {mode[6:]}"}
         )
         return 1
-    if mode == "noisy":
+    if mode in ("noisy", "flood"):
         print("this is not json", flush=True)
+    if mode == "flood":
+        for i in range(2500):
+            _progress("timbre", "fake: flooding " + "x" * 100, step=i)
+            sys.stderr.write(f"log line {i} " + "y" * 200 + "\n")
     _progress("loading", "fake: loading")
     if mode == "gate":
+        _progress("timbre", "fake: timbre", step=1)
         while not (control / "go").exists() and not args.stop_file.exists():
             time.sleep(0.01)
         return _done(args, stopped=args.stop_file.exists())

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 from collections import deque
@@ -43,6 +44,9 @@ class RunLog:
         self._log: IO[bytes] | None = None
         self.report: dict[str, Any] | None = None
         self.error: dict[str, Any] | None = None
+        self.problem: str | None = None
+        """First failure while handling the worker's output, if any."""
+        self._problems = 0
 
     def __enter__(self) -> RunLog:
         self._progress = (self._folder / "progress.jsonl").open("a", encoding="utf-8")
@@ -87,25 +91,57 @@ class RunLog:
                 for task in pending:
                     task.cancel()
                 await asyncio.gather(*pending, return_exceptions=True)
+            for task in readers:
+                if not task.cancelled() and (exc := task.exception()) is not None:
+                    self._note(exc)
+        if self._problems > 1:
+            count = self._problems
+            logger.error("job %s: %d worker output lines not recorded", self._job.id, count)
         return timed_out
 
     def failure(self, returncode: int | None) -> dict[str, Any]:
-        """The ``{code, message}`` for a failed run: last error event, else last stderr line."""
+        """The ``{code, message}`` for a failed run.
+
+        The last error event; else, when the worker exited 0 but its result was lost to an
+        output-handling problem, that problem; else the last stderr line or the exit code.
+        """
         if self.error is not None:
             return self.error
-        message = self._tail[-1] if self._tail else f"worker exited with code {returncode}"
+        if self.problem is not None and (returncode == 0 or not self._tail):
+            message = self.problem
+        elif self._tail:
+            message = self._tail[-1]
+        else:
+            message = f"worker exited with code {returncode}"
         return {"code": "worker_failed", "message": message[:MAX_MESSAGE]}
 
+    def _note(self, exc: BaseException) -> None:
+        """Record an output-handling failure (logged once per run, counted after that)."""
+        self._problems += 1
+        if self.problem is None:
+            self.problem = f"could not record worker output: {type(exc).__name__}: {exc}"
+            logger.error("job %s: %s", self._job.id, self.problem, exc_info=exc)
+
     async def _read(self, stream: asyncio.StreamReader, handle: Callable[[bytes], None]) -> None:
-        while True:
-            try:
-                raw = await stream.readline()
-            except ValueError:  # longer than the stream limit; the rest of it is dropped
-                handle(b"<overlong line skipped>\n")
-                continue
-            if not raw:
-                return
-            handle(raw)
+        """Hand each line to ``handle``; whatever fails, keep draining so the worker can't block."""
+        try:
+            while True:
+                try:
+                    raw = await stream.readline()
+                except ValueError:  # longer than the stream limit; the rest of it is dropped
+                    raw = b"<overlong line skipped>\n"
+                else:
+                    if not raw:
+                        return
+                try:
+                    handle(raw)
+                except Exception as exc:  # e.g. disk full while writing the logs
+                    self._note(exc)
+        except Exception as exc:  # the stream itself failed: discard the rest
+            self._note(exc)
+            with contextlib.suppress(Exception):
+                while await stream.read(65536):
+                    pass
 
     def _write_log(self, raw: bytes) -> None:
         if self._log is not None:

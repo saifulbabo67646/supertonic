@@ -6,6 +6,7 @@ import asyncio
 import json
 import os
 import sys
+import threading
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from datetime import UTC, datetime, timedelta
@@ -15,7 +16,14 @@ from typing import Any
 import pytest
 
 from fakes_builder import FAKE_WORKER
-from supertonic_server.builder import BuildRequest, Job, PreparedAudio, availability, jobs
+from supertonic_server.builder import (
+    BuildRequest,
+    Job,
+    PreparedAudio,
+    availability,
+    jobs,
+    runlog,
+)
 from supertonic_server.builder.availability import ProbeResult, detect_local_builder
 from supertonic_server.builder.jobs import JobManager
 from supertonic_server.core.errors import ApiError
@@ -252,6 +260,8 @@ async def test_cancel_running_kills_tree_and_imports_nothing(
     job = await mgr.submit(_req(), FILES)
     await _until(lambda: (control / "run-0.json").exists())
     await _until(lambda: mgr.get(job.id).state == "running")
+    if mode == "gate":  # optimising: at least one timbre step reported before the cancel
+        await _until(lambda: (p := mgr.get(job.id).progress) is not None and p.stage == "timbre")
     info = _run_info(control)
     t0 = time.monotonic()
     cancelled = await mgr.cancel(job.id)
@@ -496,3 +506,173 @@ def test_detect_local_builder_timeout(monkeypatch: pytest.MonkeyPatch, fresh_pro
     monkeypatch.setattr(availability, "_self_test_cmd", lambda python: sleeper)
     probe = detect_local_builder(timeout_s=0.5)
     assert not probe.available and "timed out" in probe.reason
+
+
+@pytest.mark.parametrize(
+    ("target", "state"),
+    [
+        ("log", "succeeded"),
+        ("persist", "succeeded"),
+        ("handler", "succeeded"),
+        ("stdout", "failed"),
+    ],
+)
+async def test_write_failures_never_stall_the_job(
+    make_manager: ManagerFactory,
+    modes: Callable[..., None],
+    monkeypatch: pytest.MonkeyPatch,
+    target: str,
+    state: str,
+) -> None:
+    """A failing log/progress write (or a handler bug) must not stop the pipes draining."""
+    modes("flood")
+
+    def boom(*args: Any, **kwargs: Any) -> None:
+        raise OSError(28, "No space left on device")
+
+    if target == "log":
+        monkeypatch.setattr(runlog.RunLog, "_write_log", boom)
+    elif target == "stdout":  # every stdout line, including ``done``, is lost
+        monkeypatch.setattr(runlog.RunLog, "_on_stdout", boom)
+    elif target == "handler":
+        monkeypatch.setattr(runlog.RunLog, "_on_progress", lambda self, event, line: 1 / 0)
+    mgr = await make_manager(timeout_s=30.0)
+    if target == "persist":  # every throttled progress save fails
+        real = mgr._persist
+
+        def flaky(job: Job) -> None:
+            if job.state == "running" and job.progress is not None:
+                boom()
+            real(job)
+
+        monkeypatch.setattr(mgr, "_persist", flaky)
+    t0 = time.monotonic()
+    done = await _settled(mgr, (await mgr.submit(_req(), FILES)).id)
+    assert done.state == state, done.error
+    assert time.monotonic() - t0 < 5
+    if state == "failed":
+        assert done.error is not None and done.error["code"] == "worker_failed"
+        assert "No space left on device" in done.error["message"]
+
+
+async def test_settle_persists_even_if_working_files_resist(
+    make_manager: ManagerFactory, tmp_path: Path
+) -> None:
+    root = tmp_path / "data" / "jobs"
+    folder = _write_job(root, "stuck", "running", datetime.now(UTC))
+    (folder / "STOP").mkdir()  # unlink() fails on a directory
+    (folder / "STOP" / "x").touch()
+    mgr = await make_manager()
+    assert mgr.get("stuck").state == "failed"
+    saved = json.loads((folder / "job.json").read_text(encoding="utf-8"))
+    assert saved["state"] == "failed" and saved["error"]["code"] == "interrupted"
+
+
+async def test_submit_after_close_is_unavailable(make_manager: ManagerFactory) -> None:
+    mgr = await make_manager()
+    await mgr.close()
+    with pytest.raises(ApiError) as exc:
+        await mgr.submit(_req(), FILES)
+    assert exc.value.status == 503 and exc.value.code == "builder_unavailable"
+
+
+async def test_start_tolerates_odd_job_folders(
+    make_manager: ManagerFactory, tmp_path: Path
+) -> None:
+    root = tmp_path / "data" / "jobs"
+    naive = _write_job(root, "naive", "succeeded", datetime.now(UTC))
+    data = json.loads((naive / "job.json").read_text(encoding="utf-8"))
+    data["created_at"] = datetime.now().replace(tzinfo=None).isoformat()
+    (naive / "job.json").write_text(json.dumps(data), encoding="utf-8")
+    moved = _write_job(root, "moved", "succeeded", datetime.now(UTC))
+    data = json.loads((moved / "job.json").read_text(encoding="utf-8"))
+    data["id"] = "elsewhere"
+    (moved / "job.json").write_text(json.dumps(data), encoding="utf-8")
+    odd = _write_job(root, "odd", "succeeded", datetime.now(UTC))
+    data = json.loads((odd / "job.json").read_text(encoding="utf-8"))
+    data["created_at"] = "yesterday-ish"
+    (odd / "job.json").write_text(json.dumps(data), encoding="utf-8")
+    old_ts = time.time() - 8 * 86400
+    for name, body in (("orphan-old", None), ("broken-old", "{not json"), ("broken-new", "{")):
+        folder = root / name
+        folder.mkdir()
+        if body is not None:
+            (folder / "job.json").write_text(body, encoding="utf-8")
+        if name.endswith("old"):
+            for p in (*folder.iterdir(), folder):
+                os.utime(p, (old_ts, old_ts))
+    for p in (*odd.iterdir(), odd):  # unparseable created_at: falls back to mtime
+        os.utime(p, (old_ts, old_ts))
+    outside = tmp_path / "outside.txt"
+    outside.write_text("keep", encoding="utf-8")
+    mgr = await make_manager()
+    assert mgr.get("naive").state == "succeeded"
+    assert mgr.get("moved").id == "moved"
+    with pytest.raises(ApiError):
+        mgr.get("elsewhere")
+    assert not odd.exists()
+    assert not (root / "orphan-old").exists() and not (root / "broken-old").exists()
+    assert (root / "broken-new").exists() and outside.exists()
+
+
+def _blocking_import(
+    lib: VoiceLibrary, monkeypatch: pytest.MonkeyPatch
+) -> tuple[threading.Event, threading.Event]:
+    entered, release = threading.Event(), threading.Event()
+    real = lib.import_style
+
+    def slow(*args: Any, **kwargs: Any) -> Any:
+        entered.set()
+        release.wait(10)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(lib, "import_style", slow)
+    return entered, release
+
+
+async def test_finish_during_import_is_unchanged(
+    make_manager: ManagerFactory, lib: VoiceLibrary, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    entered, release = _blocking_import(lib, monkeypatch)
+    mgr = await make_manager()
+    job = await mgr.submit(_req(), FILES)
+    await _until(entered.is_set)
+    assert (await mgr.finish(job.id)).stopping is False
+    release.set()
+    assert (await _settled(mgr, job.id)).state == "succeeded"
+
+
+async def test_runner_cancel_during_import_finishes_the_import(
+    make_manager: ManagerFactory, lib: VoiceLibrary, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    entered, release = _blocking_import(lib, monkeypatch)
+    mgr = await make_manager()
+    job = await mgr.submit(_req(), FILES)
+    await _until(entered.is_set)
+    runner = mgr._runner
+    assert runner is not None
+    runner.cancel()
+    await asyncio.sleep(0.05)
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await runner
+    done = mgr.get(job.id)
+    assert done.state == "succeeded" and done.voice_id == "narrator"
+    assert lib.get("narrator").build is not None
+
+
+def test_detect_local_builder_timeout_with_grandchild(
+    monkeypatch: pytest.MonkeyPatch, fresh_probe: None
+) -> None:
+    """A grandchild holding the pipes must not keep the probe waiting past the timeout."""
+    code = (
+        "import subprocess, sys, time\n"
+        "subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'])\n"
+        "time.sleep(30)\n"
+    )
+    cmd = [sys.executable, "-c", code]
+    monkeypatch.setattr(availability, "_self_test_cmd", lambda python: cmd)
+    t0 = time.monotonic()
+    probe = detect_local_builder(timeout_s=1.0)
+    assert not probe.available and "timed out" in probe.reason
+    assert time.monotonic() - t0 < 8
