@@ -2,7 +2,12 @@
 
 from fastapi import APIRouter
 
-from supertonic_server.api.routes import openai_speech, system
+from supertonic_server.api.routes import openai_speech, system, timestamps, voices
 
-ROUTERS: list[APIRouter] = [system.router, openai_speech.router]
+ROUTERS: list[APIRouter] = [
+    system.router,
+    openai_speech.router,
+    voices.router,
+    timestamps.router,
+]
 PUBLIC_ROUTERS: list[APIRouter] = [system.public_router]

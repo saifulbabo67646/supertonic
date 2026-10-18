@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import logging
 from collections.abc import AsyncGenerator
-from typing import Annotated, Any
+from typing import Any
 
 import numpy as np
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Response
 from fastapi.responses import StreamingResponse
 from supertonic.config import DEFAULT_SILENCE_DURATION
 
-from supertonic_server.api.deps import AppState, get_state
+from supertonic_server.api.routes._common import State
 from supertonic_server.api.schemas import SpeechRequest
 from supertonic_server.audio import ALLOWED_RATES, MIME, encode, resample, to_pcm16, wav_header
 from supertonic_server.core.errors import ApiError
@@ -21,7 +21,6 @@ from supertonic_server.text import get_language
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1")
-State = Annotated[AppState, Depends(get_state)]
 
 PCM_DEFAULT_RATE = 24000
 
