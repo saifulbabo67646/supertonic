@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import AsyncGenerator
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from fastapi import APIRouter, Response
@@ -18,6 +18,9 @@ from supertonic_server.audio import ALLOWED_RATES, MIME, encode, resample, to_pc
 from supertonic_server.core.errors import ApiError
 from supertonic_server.engine import PRIORITY_DEFAULT, PRIORITY_REALTIME, Chunk
 from supertonic_server.text import get_language
+
+if TYPE_CHECKING:
+    from starlette.types import Receive, Scope, Send
 
 logger = logging.getLogger(__name__)
 
@@ -57,9 +60,12 @@ async def _body(
 ) -> AsyncGenerator[bytes, None]:
     """Yield an optional streaming WAV header, then PCM16 for each sentence.
 
-    The engine stream is always closed, also when the client disconnects mid-stream.
+    The engine stream is always closed, also when the client disconnects mid-stream. A
+    failure after the first bytes can no longer become an error response: it is logged as
+    a warning and the body simply ends early (truncated).
     """
     gap = to_pcm16(np.zeros(int(DEFAULT_SILENCE_DURATION * rate), dtype=np.float32))
+    sent = 0
     try:
         if header:
             yield wav_header(rate, None)
@@ -68,9 +74,34 @@ async def _body(
             if chunk is not first:
                 yield gap
             yield await asyncio.to_thread(_pcm, chunk.audio, src_rate, rate)
+            sent += 1
             chunk = await anext(chunks, None)
+    except Exception:
+        logger.warning(
+            "speech stream failed after %d sentence(s); response truncated", sent, exc_info=True
+        )
     finally:
         await chunks.aclose()
+
+
+class _ClosingStreamingResponse(StreamingResponse):
+    """A streaming response that always closes its body generator when it ends.
+
+    Starlette leaves the generator suspended when the client disconnects while a chunk is
+    being sent (it may never run a background task then, e.g. on ASGI 2.4 servers), which
+    would keep the engine's lookahead sentence queued until garbage collection.
+    """
+
+    def __init__(self, body: AsyncGenerator[bytes, None], **kwargs: Any) -> None:
+        super().__init__(body, **kwargs)
+        self._body = body
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        """Stream the body, then close the generator however streaming ended."""
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            await self._body.aclose()
 
 
 @router.post("/audio/speech")
@@ -111,7 +142,7 @@ async def speech(req: SpeechRequest, state: State) -> Response:
         await chunks.aclose()
         raise
     body = _body(first, chunks, engine.sample_rate, rate, req.response_format == "wav")
-    return StreamingResponse(body, media_type=media, headers=headers)
+    return _ClosingStreamingResponse(body, media_type=media, headers=headers)
 
 
 @router.get("/models")

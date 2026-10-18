@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import json
+import logging
+from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING, Any
 
 import httpx
+import numpy as np
 import openai
 import pytest
 
@@ -188,3 +193,86 @@ async def test_render_formats_are_capped(client: AsyncClient, fmt: str, status: 
     if status == 400:
         err = r.json()["error"]
         assert err["code"] == "input_too_long" and "pcm" in err["message"]
+
+
+async def test_mid_stream_failure_is_logged_and_truncates(
+    engine: Engine, lib: VoiceLibrary, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A failure after the first bytes ends the body with a warning, not an error (D3)."""
+    from supertonic_server.engine import Chunk
+
+    async def failing() -> AsyncGenerator[Chunk, None]:
+        raise RuntimeError("model fell over")
+        yield  # pragma: no cover
+
+    first = Chunk("Hi.", np.zeros(100, dtype=np.float32))
+    parts = [p async for p in _body(first, failing(), 44100, 24000, header=False)]
+    assert len(parts) == 1
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert warnings and "truncated" in warnings[0].getMessage()
+    assert not [r for r in caplog.records if r.levelno >= logging.ERROR]
+
+
+@pytest.mark.parametrize("spec_version", ["2.3", "2.4"])
+async def test_early_disconnect_closes_engine_stream(
+    settings: Settings, lib: VoiceLibrary, monkeypatch: pytest.MonkeyPatch, spec_version: str
+) -> None:
+    """A client leaving while a chunk is being sent stops the lookahead at once (D3)."""
+    from fakes import FakeModel
+    from supertonic_server.engine import Scheduler
+
+    engine = Engine(FakeModel(delay=0.02), Scheduler(workers=1, max_queue=64))
+    streams: list[Any] = []
+    real_stream = engine.stream
+
+    def capture(*a: Any, **k: Any) -> Any:
+        streams.append(real_stream(*a, **k))
+        return streams[-1]
+
+    monkeypatch.setattr(engine, "stream", capture)
+    app = create_app(settings, engine, lib)
+    body = json.dumps({"input": "Sentence. " * 50, "voice": "F1", "response_format": "pcm"})
+    first_sent = asyncio.Event()
+    requested = False
+
+    async def receive() -> dict[str, Any]:
+        nonlocal requested
+        if not requested:
+            requested = True
+            return {"type": "http.request", "body": body.encode(), "more_body": False}
+        await first_sent.wait()
+        return {"type": "http.disconnect"}
+
+    bodies = 0
+
+    async def send(message: dict[str, Any]) -> None:
+        nonlocal bodies
+        if message["type"] != "http.response.body":
+            return
+        bodies += 1
+        if bodies == 1:
+            first_sent.set()
+            return
+        if spec_version == "2.4":
+            raise OSError("client gone")
+        await asyncio.Event().wait()  # a stuck socket; cancelled on disconnect
+
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0", "spec_version": spec_version},
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": "/v1/audio/speech",
+        "raw_path": b"/v1/audio/speech",
+        "query_string": b"",
+        "root_path": "",
+        "headers": [(b"content-type", b"application/json")],
+        "client": ("127.0.0.1", 1),
+        "server": ("test", 80),
+    }
+    with contextlib.suppress(Exception):
+        await app(scope, receive, send)
+    assert streams and streams[0].ag_frame is None  # engine generator finished
+    assert engine.scheduler.waiting == 0
+    assert len(engine.model.calls) < 10  # type: ignore[attr-defined]
