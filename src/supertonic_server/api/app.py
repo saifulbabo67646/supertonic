@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import mimetypes
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from importlib.resources import files
@@ -52,6 +53,8 @@ def create_app(
         app.include_router(router)
     for router in ROUTERS:
         app.include_router(router, dependencies=[Depends(require_key)])
+    # ES modules need a JavaScript MIME type; some Windows registries map .js to text/plain.
+    mimetypes.add_type("text/javascript", ".js")
     web = Path(str(files("supertonic_server") / "web"))
     app.mount("/", StaticFiles(directory=web, html=True), name="web")
     return app
