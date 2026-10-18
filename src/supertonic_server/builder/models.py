@@ -97,6 +97,10 @@ class Job:
     error: dict[str, Any] | None
     builder: str
     stopping: bool = False
+    remote_id: str | None = None
+    """The job's id on the remote builder (forwarded builds only)."""
+    remote_voice_id: str | None = None
+    """The built voice's id on the remote builder; ``voice_id`` is the local copy."""
 
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-serialisable dict."""
@@ -122,6 +126,8 @@ class Job:
             error=data.get("error"),
             builder=data["builder"],
             stopping=bool(data.get("stopping", False)),
+            remote_id=data.get("remote_id"),
+            remote_voice_id=data.get("remote_voice_id"),
         )
 
 

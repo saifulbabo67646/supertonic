@@ -37,9 +37,13 @@ curl -s http://127.0.0.1:8787/v1/health
 # {"status":"ok","model":"supertonic-3","voices":10,"builder":"none","builder_detail":null,"auth":false,"version":"0.1.0"}
 ```
 
-`builder` is `"local"` when this machine can build voices and `"none"` otherwise. For a
-local builder `builder_detail` is `{"device":"NVIDIA GeForce RTX 4050","vram_mb":6144,"methods":["accurate","fast"]}`;
-otherwise `null`.
+`builder` is `"local"` when this machine can build voices, `"remote"` when builds are
+forwarded to another server (`SUPERTONIC_BUILDER_URL`) and `"none"` otherwise. For a local
+builder `builder_detail` is `{"device":"NVIDIA GeForce RTX 4050","vram_mb":6144,"methods":["accurate","fast"]}`;
+for a remote one `{"host":"win-laptop:8787","methods":["accurate","fast"]}`, where `methods`
+are the ones the remote reported at its last health check (all methods until it has been
+reached once); otherwise `null`. A remote builder is not contacted by this health check, so
+`"remote"` does not mean it is up.
 
 ## Models
 
@@ -195,6 +199,19 @@ curl -s -X POST http://127.0.0.1:8787/v1/jobs/3f2c.../finish  # stop optimising,
 
 `finish` makes a running job succeed early with `build.stopped_early: true`.
 
+With `SUPERTONIC_BUILDER_URL` (and `SUPERTONIC_BUILDER_API_KEY` when the builder has an API
+key) a machine without a GPU forwards each build to that server. The builder's health is
+checked first: if it cannot be reached or has no local builder the request fails at once
+with `503 builder_unavailable` (nothing is queued for later). The builder validates the
+request, so its errors (`consent_required`, `invalid_reference_audio`,
+`method_unavailable`, ...) come back unchanged. The forwarding server keeps its own job
+(`builder` is `remote:<host:port>`, `remote_id` is the builder's job id), polls the builder
+every 3 s, and on success imports the voice into its own library (`voice_id`; the builder's
+copy is `remote_voice_id`) with `build.builder` set to `remote:<host:port>`. If the builder
+cannot be reached for 2 minutes the job fails with `builder_lost` and nothing is imported.
+`cancel` and `finish` are passed on to the builder. After a restart the forwarding server
+resumes following jobs that were still queued or running.
+
 | status | code | meaning |
 |---|---|---|
 | 400 | `invalid_request` | bad `name`, `method` or file count (`param` says which) |
@@ -204,7 +221,7 @@ curl -s -X POST http://127.0.0.1:8787/v1/jobs/3f2c.../finish  # stop optimising,
 | 404 | `job_not_found` | unknown job id |
 | 409 | `job_not_running` | `finish` on a job that has not started |
 | 413 | `payload_too_large` | upload over the limit |
-| 503 | `builder_unavailable` | no builder, or it is shutting down |
+| 503 | `builder_unavailable` | no builder, it is shutting down, or the remote builder is unreachable |
 | 503 | `builder_busy` | the queue is full |
 
 ## Realtime WebSocket

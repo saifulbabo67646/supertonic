@@ -17,6 +17,7 @@ from fakes_builder import FAKE_WORKER
 from supertonic_server.api import create_app
 from supertonic_server.builder import Builder, PreparedAudio, jobs
 from supertonic_server.builder.jobs import JobManager
+from supertonic_server.builder.remote import RemoteBuilder
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -219,8 +220,14 @@ async def test_start_builder_modes(
     monkeypatch.setattr(builder_boot, "detect_local_builder", lambda: probe)
     off = settings.model_copy(update={"builder": "off"})
     assert await builder_boot.start_builder(off, lib, tmp_path) == (None, None)
-    url = settings.model_copy(update={"builder_url": "http://win:8787"})
-    assert await builder_boot.start_builder(url, lib, tmp_path) == (None, None)
+    url = settings.model_copy(update={"builder_url": "http://127.0.0.1:9/", "builder": "local"})
+    remote, remote_detail = await builder_boot.start_builder(url, lib, tmp_path)
+    try:  # an unreachable remote does not stop startup; submit-time health gates builds
+        assert isinstance(remote, RemoteBuilder)
+        assert remote_detail == {"host": "127.0.0.1:9", "methods": ["accurate", "fast"]}
+    finally:
+        assert remote is not None
+        await remote.close()
     mgr, detail = await builder_boot.start_builder(settings, lib, tmp_path)
     assert mgr is not None
     try:
@@ -379,3 +386,36 @@ async def test_builder_failure_does_not_stop_server(
         health = (await c.get("/v1/health")).json()
         assert health["builder"] == "none" and health["builder_detail"] is None
     assert closed == [True]
+
+
+async def test_forwarded_build_through_the_api(
+    settings: Settings,
+    engine: Engine,
+    lib: VoiceLibrary,
+    manager: JobManager,
+    app_client: AppClient,
+    control: Path,
+    tmp_path: Path,
+) -> None:
+    """A builder-less instance forwards to a second app (the builder) and imports the voice."""
+    win = create_app(settings.model_copy(update={"api_key": "k"}), engine, lib, manager)
+    http = httpx.AsyncClient(transport=httpx.ASGITransport(app=win), base_url="http://win:8787")
+    rb = RemoteBuilder("http://win:8787", "k", lib, tmp_path / "mac", http=http, poll_s=0.02)
+    await rb.start()
+    try:
+        async with app_client(create_app(settings, engine, lib, rb)) as mac:
+            health = (await mac.get("/v1/health")).json()
+            assert health["builder"] == "remote"
+            assert health["builder_detail"] == {"host": "win:8787", "methods": ["accurate", "fast"]}
+            r = await mac.post("/v1/voices/build", data={**FORM, "method": "fast"}, files=_files())
+            assert r.status_code == 202 and r.json()["builder"] == "remote:win:8787"
+            done = await _wait(mac, r.json()["id"])
+            assert done["state"] == "succeeded" and done["remote_id"] is not None
+            voice = (await mac.get(f"/v1/voices/{done['voice_id']}")).json()
+            assert voice["build"]["builder"] == "remote:win:8787"
+            assert voice["build"]["method"] == "fast"
+            bad = await mac.post("/v1/voices/build", data={**FORM, "consent": "no"}, files=_files())
+            assert bad.status_code == 400 and bad.json()["error"]["code"] == "consent_required"
+    finally:
+        await rb.close()
+        await http.aclose()

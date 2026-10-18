@@ -10,6 +10,7 @@ from typing import Any
 from supertonic_server.builder import Builder
 from supertonic_server.builder.availability import detect_local_builder
 from supertonic_server.builder.jobs import JobManager
+from supertonic_server.builder.remote import RemoteBuilder
 from supertonic_server.core.config import Settings
 from supertonic_server.voices import VoiceLibrary
 
@@ -41,8 +42,13 @@ async def _start(
     if settings.builder == "off":
         return None, None
     if settings.builder_url:
-        logger.error("remote builder not yet supported; voice building is disabled")
-        return None, None
+        # Reachability is checked per build (503 builder_unavailable), not here.
+        remote = RemoteBuilder(
+            settings.builder_url, settings.builder_api_key, library, settings.data_dir
+        )
+        await remote.start()
+        logger.info("forwarding voice builds to %s", remote.host)
+        return remote, remote.detail()
     probe = await asyncio.to_thread(detect_local_builder)
     if not probe.available:
         if settings.builder == "local":
