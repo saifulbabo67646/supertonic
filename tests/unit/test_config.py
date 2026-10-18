@@ -37,3 +37,7 @@ def test_env_prefix_and_voices_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Pa
     s = Settings()
     assert s.port == 9000
     assert s.custom_voices_dir == s.data_dir / "voices"
+
+
+def test_realtime_steps_default() -> None:
+    assert Settings().realtime_steps == 4

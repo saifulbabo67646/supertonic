@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     workers: int = 0
     intra_op_threads: int | None = None
     max_queue: int = 64
+    realtime_steps: int = 4
     default_voice: str = "F1"
     builder_url: str | None = None
 
