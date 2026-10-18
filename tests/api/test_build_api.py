@@ -425,3 +425,27 @@ async def test_forwarded_build_through_the_api(
     finally:
         await rb.close()
         await http.aclose()
+
+
+async def test_health_hides_builder_host_and_gpu_without_the_key(
+    settings: Settings,
+    engine: Engine,
+    lib: VoiceLibrary,
+    app_client: AppClient,
+    tmp_path: Path,
+) -> None:
+    keyed = settings.model_copy(update={"api_key": "secret"})
+    auth = {"Authorization": "Bearer secret"}
+    gpu = JobManager(tmp_path / "gpu", lib, tmp_path / "m", timeout_s=5, device="RTX", vram_mb=6)
+    remote = RemoteBuilder("http://192.0.2.10:8787", "k", lib, tmp_path / "fwd")
+    for builder, private in ((gpu, "device"), (remote, "host")):
+        async with app_client(create_app(keyed, engine, lib, builder)) as c:
+            public = (await c.get("/v1/health")).json()["builder_detail"]
+            assert private not in public and public["methods"] == ["accurate", "fast"]
+            wrong = await c.get("/v1/health", headers={"Authorization": "Bearer nope"})
+            assert private not in wrong.json()["builder_detail"]
+            full = (await c.get("/v1/health", headers=auth)).json()["builder_detail"]
+            assert full[private] in ("RTX", "192.0.2.10:8787")
+        async with app_client(create_app(settings, engine, lib, builder)) as c:  # no key set
+            assert private in (await c.get("/v1/health")).json()["builder_detail"]
+    await remote.close()

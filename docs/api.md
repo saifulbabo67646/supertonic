@@ -45,7 +45,8 @@ builder `builder_detail` is `{"device":"NVIDIA GeForce RTX 4050","vram_mb":6144,
 for a remote one `{"host":"win-laptop:8787","methods":["accurate","fast"]}`, where `methods`
 are the ones the remote reported at its last health check (all methods until it has been
 reached once); otherwise `null`. A remote builder is not contacted by this health check, so
-`"remote"` does not mean it is up.
+`"remote"` does not mean it is up. When the server has an API key, `host` and `device`
+are only included for requests that send the key (the health check itself needs none).
 
 ## Models
 
