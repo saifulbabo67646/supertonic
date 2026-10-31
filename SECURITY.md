@@ -1,10 +1,27 @@
 # Security Policy
 
+## Supported versions
+
+Supertonic Server is young; security fixes go into the latest release only.
+
+| Version | Supported |
+|---|---|
+| 0.1.x (latest) | Yes |
+| Older | No |
+
 ## Reporting a vulnerability
 
-Please report vulnerabilities privately using GitHub's "Report a vulnerability" feature
-(Security tab) rather than opening a public issue. Include reproduction steps and the
-affected version. We aim to acknowledge reports within a few days.
+Please do **not** open a public issue for a security problem. Report it privately through
+GitHub's private vulnerability reporting instead:
+
+1. Open <https://github.com/saifulbabo67646/supertonic/security/advisories/new>
+   (or the repository's **Security** tab, then **Report a vulnerability**).
+2. Describe the problem, how to reproduce it, the version (`GET /v1/health` shows it) and
+   your operating system.
+
+We aim to acknowledge a report within 5 working days and to agree on a fix and a
+disclosure date with you. We will credit you in the advisory unless you would rather not
+be named.
 
 ## Security model
 

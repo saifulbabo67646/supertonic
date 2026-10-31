@@ -8,6 +8,24 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- Community files for the public repository: a full Contributor Covenant 2.1, a security
+  policy with supported versions and private reporting, GitHub issue forms, a pull request
+  template, a docs index (`docs/README.md`), CodeQL scanning and weekly Dependabot updates.
+
+### Changed
+
+- Package metadata: SPDX licence expression, authors, keywords, classifiers and project
+  links; the version is defined once, in `supertonic_server.__version__`.
+- CI runs lint and type checks once, the tests on Linux, macOS and Windows with Python
+  3.11 to 3.13, and a package build check, on current GitHub Actions versions.
+- Internal: the voice builder's job runner moved to its own module (no behaviour change).
+
+## [0.1.0] - 2026-10-31
+
+First public release.
+
+### Added
+
 - Project scaffold, settings and a startup safety check that refuses non-loopback binds
   or a public URL without an API key.
 - Synthesis engine with a priority worker pool (realtime ahead of REST), bounded queue and
@@ -73,3 +91,6 @@ All notable changes to this project are documented here. The format is based on
 - `api_key=` values are redacted from the access log.
 - The builder worker's `--self-test` no longer crashes with `OSError: [Errno 22]` when run
   by hand from a Windows console with its output piped.
+
+[Unreleased]: https://github.com/saifulbabo67646/supertonic/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/saifulbabo67646/supertonic/releases/tag/v0.1.0

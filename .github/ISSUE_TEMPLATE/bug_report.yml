@@ -1,0 +1,81 @@
+name: Bug report
+description: Something does not work the way it should
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. Please do not include API keys, private
+        recordings or other personal data. Security problems go to the private form linked
+        on the previous page, not here.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, and what went wrong? Paste any error message.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The smallest set of steps, request or command that shows the problem.
+      placeholder: |
+        1. Start the server with ...
+        2. Send ...
+        3. See ...
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part?
+      options:
+        - Web UI
+        - Speech API (/v1/audio/speech)
+        - Realtime WebSocket
+        - Timestamps
+        - Voice library
+        - Voice builder
+        - MCP server
+        - Install or setup scripts
+        - Docs
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Server version
+      description: Shown by `GET /v1/health` (the "version" field), or the Git commit you run.
+      placeholder: 0.1.0
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS
+        - Windows
+        - Linux
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: hardware
+    attributes:
+      label: Python version and hardware
+      description: For example "Python 3.12, Apple M2" or "Python 3.11, RTX 4060 8 GB".
+  - type: textarea
+    id: logs
+    attributes:
+      label: Server log
+      description: The relevant lines from the server output. They are formatted as code automatically.
+      render: text
