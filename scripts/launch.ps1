@@ -59,13 +59,15 @@ if ($wantBuilder) {
         Say ''
         uv sync
         if ($LASTEXITCODE -ne 0) { Fail "installing Supertonic's dependencies failed. Check your internet connection and try again." }
-    } else {
-        # The first import of PyTorch after an install is slow; doing it now keeps the
+    } elseif (-not (Test-Path .venv\.builder-checked)) {
+        # The first import of PyTorch after an install is slow; doing it once now keeps the
         # server's own builder check (which has a time limit) fast.
-        Say 'Checking the voice builder (the first time this can take a minute).'
+        Say 'Checking the voice builder (this takes a minute, once).'
         $probe = uv run --no-sync python -m supertonic_server.builder.worker --self-test 2> $null |
             Select-Object -Last 1
-        if (-not ("$probe" -match '"cuda": true')) {
+        if ("$probe" -match '"cuda": true') {
+            New-Item -ItemType File -Force .venv\.builder-checked | Out-Null
+        } else {
             Say 'Note: the voice builder check did not pass; building new voices may be unavailable.'
             Say 'See docs\troubleshooting.md, "The voice builder".'
         }
