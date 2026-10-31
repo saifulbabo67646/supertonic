@@ -196,18 +196,22 @@ def already_running(
     port: int,
     *,
     open_browser: bool,
+    span: int = PORT_SPAN,
     probe: Callable[[str], dict[str, Any] | None] | None = None,
     opener: Callable[[str], bool] | None = None,
 ) -> bool:
-    """If Supertonic already answers on ``host:port``, say so, open the Studio, return True."""
-    url = studio_url(host, port)
-    if not is_supertonic((probe or probe_health)(url)):
-        return False
-    say(f"Supertonic is already running: {url}")
-    if open_browser:
-        say("Opening it in your browser.")
-        open_in_browser(url, opener)
-    return True
+    """If Supertonic already answers on ``port`` or one of the ``span - 1`` ports above it
+    (where the launcher would have put it), say so, open the Studio and return True."""
+    check = probe or probe_health
+    for candidate in range(port, min(port + span, 65536)):
+        url = studio_url(host, candidate)
+        if is_supertonic(check(url)):
+            say(f"Supertonic is already running: {url}")
+            if open_browser:
+                say("Opening it in your browser.")
+                open_in_browser(url, opener)
+            return True
+    return False
 
 
 def first_start_note() -> None:

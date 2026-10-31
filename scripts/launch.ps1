@@ -8,7 +8,7 @@
 #
 # Set SUPERTONIC_SKIP_BUILDER=1 to never install the voice builder extra.
 $ErrorActionPreference = 'Continue'
-Set-Location (Split-Path -Parent $PSScriptRoot)
+Set-Location -LiteralPath (Split-Path -Parent $PSScriptRoot)
 $env:PYTHONUTF8 = '1'  # the console code page (cp1252) cannot print every log line
 
 function Say([string]$Message = '') { Write-Host $Message }
@@ -27,7 +27,7 @@ Say ''
 
 # 1. uv, the tool that installs Python and Supertonic's dependencies.
 $uvBin = Join-Path $env:USERPROFILE '.local\bin'
-if (-not (Test-Uv) -and (Test-Path (Join-Path $uvBin 'uv.exe'))) { $env:Path = "$uvBin;$env:Path" }
+if (-not (Test-Uv) -and (Test-Path -LiteralPath (Join-Path $uvBin 'uv.exe'))) { $env:Path = "$uvBin;$env:Path" }
 if (-not (Test-Uv)) {
     Say 'Supertonic needs a small free tool called uv (from Astral) to install everything else.'
     Say 'Installing it now. This happens only once.'
@@ -41,7 +41,7 @@ if (-not (Test-Uv)) {
 
 # 2. Dependencies. With an NVIDIA GPU, also the voice builder (PyTorch with CUDA, ~3 GB).
 # A new install uses Python 3.13, the newest version the project is tested on.
-if (-not (Test-Path .venv) -and -not $env:UV_PYTHON) { $env:UV_PYTHON = '3.13' }
+if (-not (Test-Path -LiteralPath .venv) -and -not $env:UV_PYTHON) { $env:UV_PYTHON = '3.13' }
 $wantBuilder = $false
 if ($env:SUPERTONIC_SKIP_BUILDER -ne '1' -and (Get-Command nvidia-smi -ErrorAction SilentlyContinue)) {
     nvidia-smi *> $null
@@ -59,14 +59,14 @@ if ($wantBuilder) {
         Say ''
         uv sync
         if ($LASTEXITCODE -ne 0) { Fail "installing Supertonic's dependencies failed. Check your internet connection and try again." }
-    } elseif (-not (Test-Path .venv\.builder-checked)) {
+    } elseif (-not (Test-Path -LiteralPath .venv\.builder-checked)) {
         # The first import of PyTorch after an install is slow; doing it once now keeps the
         # server's own builder check (which has a time limit) fast.
         Say 'Checking the voice builder (this takes a minute, once).'
         $probe = uv run --no-sync python -m supertonic_server.builder.worker --self-test 2> $null |
             Select-Object -Last 1
         if ("$probe" -match '"cuda": true') {
-            New-Item -ItemType File -Force .venv\.builder-checked | Out-Null
+            New-Item -ItemType File -Force -Path .venv -Name .builder-checked | Out-Null
         } else {
             Say 'Note: the voice builder check did not pass; building new voices may be unavailable.'
             Say 'See docs\troubleshooting.md, "The voice builder".'

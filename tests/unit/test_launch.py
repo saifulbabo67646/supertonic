@@ -262,3 +262,52 @@ def test_launch_command_passes_no_open(monkeypatch: pytest.MonkeyPatch) -> None:
         cli.main(["launch", "--port", "8792", "--no-open"])
     assert exc.value.code == 0
     assert calls == [(8792, False)]
+
+
+def test_already_running_finds_a_server_on_a_later_port() -> None:
+    probed: list[str] = []
+    opened: list[str] = []
+
+    def probe(url: str) -> dict[str, Any] | None:
+        probed.append(url)
+        return HEALTH if url == "http://127.0.0.1:8788/" else {"status": "ok"}
+
+    found = launch.already_running(
+        "127.0.0.1",
+        8787,
+        open_browser=True,
+        probe=probe,
+        opener=lambda url: opened.append(url) or True,
+    )
+    assert found
+    assert probed == ["http://127.0.0.1:8787/", "http://127.0.0.1:8788/"]
+    assert opened == ["http://127.0.0.1:8788/"]
+
+
+def test_already_running_checks_the_whole_span() -> None:
+    probed: list[str] = []
+    found = launch.already_running(
+        "127.0.0.1",
+        8787,
+        open_browser=True,
+        probe=lambda url: probed.append(url) or None,
+        opener=lambda url: pytest.fail("must not open"),
+    )
+    assert not found
+    assert probed == [f"http://127.0.0.1:{p}/" for p in range(8787, 8800)]
+
+
+@pytest.mark.parametrize("code", [1, 3])
+def test_launch_reports_a_uvicorn_startup_exit(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], code: int
+) -> None:
+    def failing_serve(settings: Settings, watcher: launch.ReadyWatcher | None = None) -> bool:
+        raise SystemExit(code)  # what uvicorn does when lifespan startup or the bind fails
+
+    monkeypatch.setattr(launch, "already_running", lambda host, port, *, open_browser: False)
+    monkeypatch.setattr(launch, "choose_port", lambda host, port: port)
+    monkeypatch.setattr(cli, "_serve", failing_serve)
+    assert cli._launch(Settings(_env_file=None), open_browser=False) == code  # type: ignore[call-arg]
+    out = capsys.readouterr().out
+    assert "Supertonic could not start" in out
+    assert "docs/troubleshooting.md" in out

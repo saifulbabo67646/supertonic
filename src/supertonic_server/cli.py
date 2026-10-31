@@ -75,6 +75,14 @@ def _launch(settings: Settings, *, open_browser: bool) -> int:
         started = _serve(settings, watcher)
     except KeyboardInterrupt:  # Ctrl+C: uvicorn shuts down, then re-raises the signal
         started = True
+    except SystemExit as exc:
+        # uvicorn exits this way when startup fails (model load, port bind); so does
+        # unsafe configuration (status 2).
+        if exc.code in (0, None):
+            started = True
+        else:
+            launch.fail("the server stopped while starting (the reason is in the messages above).")
+            return exc.code if isinstance(exc.code, int) else 1
     if not started:
         launch.fail("the server stopped while starting (the reason is in the messages above).")
         return 1
