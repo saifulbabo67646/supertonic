@@ -57,7 +57,7 @@ export async function request(path, options = {}) {
     }
     if (res.ok) return res;
     if (res.status !== 401) throw await toError(res);
-    const message = key || rejected ? "That key was not accepted. Check it and try again." : "";
+    const message = key || rejected ? "That key did not work. Check it for typos and try again." : "";
     const next = await askForKey(message);
     if (!next) throw await toError(res);
     setApiKey(next);

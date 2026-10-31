@@ -36,7 +36,7 @@ export function setApiKey(key) {
 }
 
 /**
- * Recent generations, newest first. Each: {text, voice, language, speed, steps, format, timestamp}.
+ * Recent generations, newest first. Each: {text, voice, language, speed, steps, timestamp}.
  * @returns {Array<object>}
  */
 export function getHistory() {
@@ -60,4 +60,16 @@ export function addHistory(entry) {
 /** Remove all history. */
 export function clearHistory() {
   write(HISTORY_STORAGE, null);
+}
+
+const WELCOME_STORAGE = "supertonic.welcomeDismissed";
+
+/** Whether the first-run welcome was dismissed in this browser. */
+export function welcomeDismissed() {
+  return read(WELCOME_STORAGE) === "1";
+}
+
+/** Remember that the welcome was dismissed (or with `false`, show it again). */
+export function setWelcomeDismissed(dismissed = true) {
+  write(WELCOME_STORAGE, dismissed ? "1" : null);
 }

@@ -30,7 +30,8 @@ export function askForKey(message = "") {
       event.preventDefault();
       const key = input.value.trim();
       if (!key) {
-        error.textContent = "Enter the key set in SUPERTONIC_API_KEY on the server.";
+        error.textContent =
+          "Type the access key. It is the SUPERTONIC_API_KEY value the server was started with.";
         input.focus();
         return;
       }

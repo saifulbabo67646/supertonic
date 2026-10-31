@@ -2,6 +2,7 @@
 
 import { stopPreview } from "./audio.js";
 import { getHealth, onVoicesChanged } from "./catalog.js";
+import { friendlyError } from "./errors.js";
 import * as connect from "./connect.js";
 import * as newVoice from "./new-voice.js";
 import * as speak from "./speak.js";
@@ -55,13 +56,15 @@ async function showStatus() {
   try {
     const info = await getHealth();
     const render = (count) => {
-      el.textContent = `${info.model}, ${count} voices, v${info.version}`;
+      el.textContent = `Ready · ${count} voices`;
+      el.title = `${info.model}, version ${info.version}`;
     };
     render(info.voices);
     onVoicesChanged((list) => render(list.length));
     el.dataset.state = "ok";
   } catch (err) {
-    el.textContent = `Server unreachable: ${err.message}`;
+    el.textContent = "Not connected";
+    el.title = friendlyError(err);
     el.dataset.state = "error";
   }
 }

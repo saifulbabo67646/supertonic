@@ -53,6 +53,6 @@ jobs:
         shell: bash
         run: |
           files=$(unzip -l dist/*.whl)
-          for f in supertonic_server/py.typed supertonic_server/web/index.html supertonic_server/web/js/app.js; do
+          for f in supertonic_server/py.typed supertonic_server/web/index.html supertonic_server/web/js/app.js supertonic_server/web/css/guide.css; do
             grep -q "$f" <<<"$files" || { echo "missing from wheel: $f"; exit 1; }
           done

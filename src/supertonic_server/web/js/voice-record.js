@@ -12,7 +12,10 @@ const TYPES = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;c
 /** Why recording is impossible here, or "" when it should work. */
 function unsupportedReason() {
   if (!window.isSecureContext) {
-    return "Recording needs a secure page (https or localhost). Upload a file instead.";
+    return (
+      "The browser only allows recording on this computer's own address (localhost) or a " +
+      "secure (https) page. Upload a recording instead, or open Supertonic on the computer it runs on."
+    );
   }
   if (!navigator.mediaDevices?.getUserMedia || typeof window.MediaRecorder !== "function") {
     return "This browser cannot record audio. Upload a file instead.";
@@ -39,7 +42,10 @@ function micError(err) {
   if (err && err.name === "NotFoundError") {
     return "No microphone was found. Connect one, or upload a file instead.";
   }
-  return `Could not start recording: ${err?.message || "unknown error"}`;
+  return (
+    "Could not start recording. Check that a microphone is connected and not used by another " +
+    `app, or upload a file instead. (Details: ${err?.message || "unknown error"})`
+  );
 }
 
 const clock = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
@@ -56,10 +62,10 @@ export function buildRecorder(onChange) {
   const el = h(
     "div",
     { class: "recorder", role: "group", "aria-labelledby": "recorder-title" },
-    h("h3", { id: "recorder-title", text: "Or record in the browser" }),
+    h("h3", { id: "recorder-title", text: "Or record yourself now" }),
     h("p", {
       class: "hint",
-      text: `Read naturally in a quiet room for ${MIN_SECONDS} to ${MAX_SECONDS} seconds; 10 to 30 seconds works well. Recording stops by itself at ${MAX_SECONDS} seconds.`,
+      text: `Press Record, read the text above at a relaxed pace, then press Stop. Recording stops by itself after ${MAX_SECONDS} seconds.`,
     }),
     body,
     status,
@@ -135,7 +141,7 @@ export function buildRecorder(onChange) {
       recorder = new MediaRecorder(stream, type ? { mimeType: type } : undefined);
     } catch (err) {
       stream.getTracks().forEach((t) => t.stop());
-      status.set(`Could not start recording: ${err.message}`, "error");
+      status.set(micError(err), "error");
       idle();
       return;
     }
@@ -223,9 +229,15 @@ export function buildRecorder(onChange) {
     take.seconds = seconds;
     slot.set(take);
     if (seconds < MIN_SECONDS) {
-      status.set(`That take is under ${MIN_SECONDS} seconds. Record a longer one.`, "error");
+      status.set(
+        `That recording is only ${clock(seconds)}. Press Re-record and talk for 30 seconds or more.`,
+        "error",
+      );
     } else {
-      status.set(`Recorded ${clock(seconds)}. It will be sent with the form.`, "ok");
+      status.set(
+        `Recorded ${clock(seconds)}. Play it back to check it, then go on to step 2.`,
+        "ok",
+      );
     }
     idle();
     onChange();

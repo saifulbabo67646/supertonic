@@ -2,9 +2,11 @@
 
 import { voiceLabel } from "./catalog.js";
 import { field, h, replace, statusLine } from "./dom.js";
+import { FORMATS } from "./speak-result.js";
 
 export const DEFAULT_SPEED = 1.05;
 export const DEFAULT_STEPS = 8;
+export const DEFAULT_FORMAT = "mp3";
 
 /**
  * Build the voice, language, speed and advanced controls; stores elements on `ui`.
@@ -19,9 +21,9 @@ export function buildControls(ui) {
     {
       type: "button",
       class: "btn icon",
-      "aria-label": "Preview selected voice",
+      "aria-label": "Play a short sample of the selected voice",
       "aria-pressed": "false",
-      title: "Preview voice",
+      title: "Play a short sample of this voice",
     },
     h("span", { class: "play-glyph", "aria-hidden": "true" }),
   );
@@ -41,7 +43,7 @@ export function buildControls(ui) {
   });
   ui.speedOut = h("output", { class: "range-value" });
   ui.speedOut.value = DEFAULT_SPEED.toFixed(2);
-  const speedField = field("Speed", ui.speed, "0.70 is slowest, 2.00 is fastest.");
+  const speedField = field("Speed", ui.speed, "1.00 is normal. Move left to slow down, right to speed up.");
   speedField.querySelector("label").append(ui.speedOut);
   ui.steps = h("input", {
     type: "number",
@@ -51,25 +53,43 @@ export function buildControls(ui) {
     value: String(DEFAULT_STEPS),
     inputmode: "numeric",
   });
+  ui.formatHint = h("p", { class: "hint", id: "format-hint" });
   const formatSet = h(
     "fieldset",
-    { class: "segmented" },
-    h("legend", { text: "Format" }),
-    ["wav", "mp3"].map((fmt) =>
+    { class: "segmented", "aria-describedby": "format-hint" },
+    h("legend", { text: "File type" }),
+    FORMATS.map((f) =>
       h(
         "label",
         {},
-        h("input", { type: "radio", name: "format", value: fmt, checked: fmt === "wav" }),
-        h("span", { text: fmt.toUpperCase() }),
+        h("input", {
+          type: "radio",
+          name: "format",
+          value: f.value,
+          checked: f.value === DEFAULT_FORMAT,
+        }),
+        h("span", { text: f.label }),
       ),
     ),
   );
+  const showFormatHint = () => {
+    const chosen = formatSet.querySelector("input:checked")?.value;
+    const f = FORMATS.find((x) => x.value === chosen) || FORMATS[0];
+    ui.formatHint.textContent = `${f.label}: ${f.hint}.`;
+  };
+  formatSet.addEventListener("change", showFormatHint);
+  showFormatHint();
+  ui.showFormatHint = showFormatHint;
   const advanced = h(
     "details",
     { class: "advanced" },
     h("summary", { text: "Advanced" }),
-    field("Quality steps", ui.steps, "1 to 20. More steps sound cleaner but take longer."),
-    formatSet,
+    field(
+      "Quality steps",
+      ui.steps,
+      "How many passes are used to polish the sound, 1 to 20. More sounds a little cleaner " +
+        "but takes longer; 8 is a good balance.",
+    ),
   );
   ui.generate = h("button", { type: "submit", class: "btn primary wide", text: "Generate" });
   ui.status = statusLine();
@@ -78,8 +98,9 @@ export function buildControls(ui) {
     { class: "controls panel" },
     ui.tagField,
     voiceField,
-    field("Language", ui.language),
+    field("Language", ui.language, "The language your text is written in."),
     speedField,
+    h("div", { class: "field" }, formatSet, ui.formatHint),
     advanced,
     ui.generate,
     ui.status,
@@ -92,8 +113,8 @@ export function fillVoices(ui, allVoices) {
   const current = ui.voice.value;
   const shown = allVoices.filter((v) => !tag || v.tags.includes(tag));
   const groups = [
-    ["Presets", shown.filter((v) => v.kind === "preset")],
-    ["Custom voices", shown.filter((v) => v.kind === "custom")],
+    ["Built-in voices", shown.filter((v) => v.kind === "preset")],
+    ["Your voices", shown.filter((v) => v.kind === "custom")],
   ];
   replace(
     ui.voice,

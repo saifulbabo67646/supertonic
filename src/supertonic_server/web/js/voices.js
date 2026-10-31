@@ -3,9 +3,10 @@
 
 import * as api from "./api.js";
 import { playPreview } from "./audio.js";
-import { buildFacts, NO_BUILDER_TEXT } from "./build-copy.js";
+import { buildFacts, noBuilderCard } from "./build-copy.js";
 import { getHealth, getLanguages, onVoicesChanged, refreshVoices } from "./catalog.js";
 import { downloadBlob, h, replace, statusLine } from "./dom.js";
+import { friendlyError } from "./errors.js";
 import { buildImportForm } from "./voice-import.js";
 import { confirmDelete, editForm } from "./voice-manage.js";
 
@@ -14,14 +15,13 @@ let languages = [];
 let voices = [];
 let kindFilter = "all";
 const notify = (text) => ui.status.set(text, "ok");
+const fail = (err) => ui.status.set(friendlyError(err), "error");
 
 function languageSelect(label) {
   const select = h(
     "select",
     { class: "compact", "aria-label": label },
-    languages.map((l) =>
-      h("option", { value: l.code, text: l.code === "na" ? "auto" : l.code, title: l.name }),
-    ),
+    languages.filter((l) => l.code !== "na").map((l) => h("option", { value: l.code, text: l.name })),
   );
   select.value = "en";
   return select;
@@ -36,25 +36,32 @@ function card(voice) {
       type: "button",
       class: "btn icon",
       "aria-pressed": "false",
-      "aria-label": `Preview ${voice.name}`,
+      "aria-label": `Play a sample of ${voice.name}`,
+      title: "Play a short sample",
     },
     h("span", { class: "play-glyph", "aria-hidden": "true" }),
   );
   play.addEventListener("click", () =>
-    playPreview(voice.id, lang.value, play).catch((err) => ui.status.set(err.message, "error")),
+    playPreview(voice.id, lang.value, play).catch(fail),
   );
   const use = h("a", {
     class: "btn small",
     href: `#/speak?voice=${encodeURIComponent(voice.id)}`,
     text: "Use in Speak",
   });
-  const exp = h("button", { type: "button", class: "btn ghost small", text: "Export" });
-  exp.setAttribute("aria-label", `Export ${voice.name} style JSON`);
+  const exp = h("button", {
+    type: "button",
+    class: "btn ghost small",
+    text: "Download voice file",
+    title: "Save this voice as a .json file, to back it up or add it to another Supertonic",
+  });
+  exp.setAttribute("aria-label", `Download the voice file for ${voice.name}`);
   exp.addEventListener("click", async () => {
     try {
       downloadBlob(await api.exportStyle(voice.id), `${voice.id}.json`);
+      notify(`Downloaded the voice file for ${voice.name} (${voice.id}.json).`);
     } catch (err) {
-      ui.status.set(err.message, "error");
+      fail(err);
     }
   });
   const manage = h("div", { class: "manage" }, exp);
@@ -74,7 +81,7 @@ function card(voice) {
       h("h3", { text: voice.name }),
       h("span", {
         class: `badge ${voice.kind}`,
-        text: voice.kind === "preset" ? "Preset" : "Custom",
+        text: voice.kind === "preset" ? "Built-in" : "Yours",
       }),
     ),
     h(
@@ -101,7 +108,7 @@ function card(voice) {
       type: "button",
       class: "btn ghost small",
       "data-action": "edit",
-      text: "Edit",
+      text: "Rename or edit",
     });
     const del = h("button", {
       type: "button",
@@ -124,20 +131,22 @@ function render() {
     cards.unshift(
       h("p", {
         class: "empty",
-        text: "No custom voices yet. Build one from a recording, or import a style JSON below.",
+        text:
+          "You have not made any voices yet. Press New voice to make one from a recording, " +
+          "or add a voice file below.",
       }),
     );
   }
   replace(ui.list, cards);
   const custom = voices.filter((v) => v.kind === "custom").length;
-  ui.count.textContent = `${voices.length - custom} presets, ${custom} custom`;
+  ui.count.textContent = `${voices.length - custom} built-in, ${custom} yours`;
 }
 
 function filterBar() {
   const options = [
     ["all", "All"],
-    ["preset", "Presets"],
-    ["custom", "Custom"],
+    ["preset", "Built-in"],
+    ["custom", "Your voices"],
   ];
   const set = h(
     "fieldset",
@@ -181,7 +190,9 @@ export function mount(root) {
       { class: "view-head" },
       h("h1", { id: "voices-title", text: "Voices" }),
       h("p", {
-        text: "Preview the built-in voices, build new ones from a recording, and manage custom voices.",
+        text:
+          "Press ▶ to hear a voice in any language. Make a new voice from a recording, and " +
+          "rename, download or delete the voices you made.",
       }),
       ui.build,
     ),
@@ -204,11 +215,24 @@ async function renderBuildEntry() {
   } catch {
     // The status line already reports an unreachable server.
   }
+  if (builder === "none") {
+    const more = h(
+      "details",
+      { class: "no-builder-note" },
+      h("summary", { text: "Why can't I make a new voice here?" }),
+      noBuilderCard("voices-no-builder-title"),
+    );
+    replace(ui.build, more);
+    return;
+  }
   replace(
     ui.build,
-    builder === "none"
-      ? h("p", { class: "hint", text: NO_BUILDER_TEXT })
-      : h("a", { class: "btn primary", href: "#/voices/new", text: "New voice" }),
+    h(
+      "div",
+      { class: "row" },
+      h("a", { class: "btn primary", href: "#/voices/new", text: "New voice" }),
+      h("span", { class: "hint", text: "Make a voice from a recording of someone speaking." }),
+    ),
   );
 }
 
@@ -236,7 +260,7 @@ export async function show(params) {
     voices = list;
     render();
   } catch (err) {
-    ui.status.set(`Could not load voices: ${err.message}`, "error");
+    ui.status.set(`Could not load the voices. ${friendlyError(err)}`, "error");
     return;
   }
   const wanted = params?.get("voice");

@@ -48,11 +48,11 @@ export function buildClips(onError) {
   const zone = h(
     "div",
     { class: "dropzone" },
-    h("label", { for: "clip-input", text: "Reference recordings" }),
+    h("label", { for: "clip-input", text: "Upload a recording" }),
     h("p", {
       class: "hint",
       id: "clip-hint",
-      text: `Drop up to ${MAX_FILES} audio files here, or choose them. One speaker only, little background noise, up to 25 MB in total. The server checks for ${MIN_SECONDS} to ${MAX_SECONDS} seconds of speech after trimming silence.`,
+      text: `Drag up to ${MAX_FILES} audio files here (WAV, MP3, M4A and most others), or press the button to choose them. Together they need ${MIN_SECONDS} to ${MAX_SECONDS} seconds of speech and at most 25 MB.`,
     }),
     input,
   );
@@ -112,11 +112,11 @@ export function buildClips(onError) {
     const secs = files.reduce((n, f) => n + (f.seconds || 0), 0);
     let text = `${files.length} of ${MAX_FILES} recordings, ${mb(bytes)}`;
     if (known) text += `, about ${Math.round(secs)} s`;
-    if (bytes > MAX_BYTES) text += ". That is over the 25 MB limit.";
+    if (bytes > MAX_BYTES) text += ". That is over the 25 MB limit; use shorter files.";
     else if (known && secs < MIN_SECONDS)
-      text += `. The server needs at least ${MIN_SECONDS} seconds of speech.`;
+      text += `. That is too short: at least ${MIN_SECONDS} seconds of speech are needed.`;
     else if (known && secs > MAX_SECONDS) {
-      text += `. The server rejects more than ${MAX_SECONDS} seconds of speech after trimming silence.`;
+      text += `. That may be too long: at most ${MAX_SECONDS} seconds of speech (pauses do not count).`;
     }
     summary.textContent = text;
   }
@@ -139,7 +139,7 @@ export function buildClips(onError) {
     /** A blocking problem with the chosen files, or "". */
     check() {
       const files = all();
-      if (!files.length) return "Add a recording: upload a file or record one.";
+      if (!files.length) return "Add a recording first (step 1): upload a file or record one.";
       if (files.length > MAX_FILES) return `Use at most ${MAX_FILES} recordings.`;
       if (files.reduce((n, f) => n + f.size, 0) > MAX_BYTES) {
         return "The recordings are over 25 MB in total. Use shorter or compressed files.";

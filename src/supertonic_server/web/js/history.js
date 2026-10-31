@@ -10,8 +10,11 @@ const PREVIEW_CHARS = 140;
  * @param {HTMLElement} root
  * @param {Array<object>} entries newest first
  * @param {(entry: object) => void} onRegenerate
+ * @param {{voiceName: (id: string) => string, languageName: (code: string) => string}} [names]
  */
-export function renderHistory(root, entries, onRegenerate) {
+export function renderHistory(root, entries, onRegenerate, names = {}) {
+  const voiceName = names.voiceName || ((id) => id);
+  const languageName = names.languageName || ((code) => code);
   const head = h(
     "div",
     { class: "section-head" },
@@ -24,7 +27,7 @@ export function renderHistory(root, entries, onRegenerate) {
       head,
       h("p", {
         class: "empty",
-        text: "Your last 20 generations in this browser appear here, ready to regenerate.",
+        text: "Nothing yet. Each time you press Generate, it is listed here so you can make it again.",
       }),
     );
     return;
@@ -32,7 +35,7 @@ export function renderHistory(root, entries, onRegenerate) {
   const clear = h("button", { type: "button", class: "btn ghost small", text: "Clear history" });
   clear.addEventListener("click", () => {
     clearHistory();
-    renderHistory(root, [], onRegenerate);
+    renderHistory(root, [], onRegenerate, names);
   });
   head.append(clear);
   const list = h(
@@ -41,8 +44,8 @@ export function renderHistory(root, entries, onRegenerate) {
     entries.map((entry) => {
       const text =
         entry.text.length > PREVIEW_CHARS ? `${entry.text.slice(0, PREVIEW_CHARS)}…` : entry.text;
-      const btn = h("button", { type: "button", class: "btn small", text: "Regenerate" });
-      btn.setAttribute("aria-label", `Regenerate: ${text.slice(0, 60)}`);
+      const btn = h("button", { type: "button", class: "btn small", text: "Make again" });
+      btn.setAttribute("aria-label", `Make again: ${text.slice(0, 60)}`);
       btn.addEventListener("click", () => onRegenerate(entry));
       const speed = Number(entry.speed || 1.05).toFixed(2);
       return h(
@@ -52,8 +55,8 @@ export function renderHistory(root, entries, onRegenerate) {
         h(
           "div",
           { class: "history-meta" },
-          h("span", { class: "chip", text: entry.voice || "?" }),
-          h("span", { class: "chip", text: entry.language || "en" }),
+          h("span", { class: "chip", text: entry.voice ? voiceName(entry.voice) : "?" }),
+          h("span", { class: "chip", text: languageName(entry.language || "en") }),
           h("span", { text: `speed ${speed}` }),
           h("time", {
             datetime: new Date(entry.timestamp).toISOString(),

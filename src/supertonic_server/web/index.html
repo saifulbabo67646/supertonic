@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="/css/controls.css" />
     <link rel="stylesheet" href="/css/screens.css" />
     <link rel="stylesheet" href="/css/new-voice.css" />
+    <link rel="stylesheet" href="/css/guide.css" />
     <link rel="stylesheet" href="/css/responsive.css" />
     <script type="module" src="/js/app.js"></script>
   </head>
@@ -27,7 +28,16 @@
         <a href="#/voices" data-route="voices">Voices</a>
         <a href="#/connect" data-route="connect">Connect</a>
       </nav>
-      <p class="server-status" id="server-status" aria-live="polite">Connecting…</p>
+      <div class="mast-side">
+        <p class="server-status" id="server-status" aria-live="polite">Connecting…</p>
+        <a
+          class="help-link"
+          href="https://github.com/saifulbabo67646/supertonic/blob/main/docs/getting-started.md"
+          target="_blank"
+          rel="noopener"
+          >Help<span class="visually-hidden"> (beginner's guide, opens in a new tab)</span></a
+        >
+      </div>
     </header>
 
     <main id="main" tabindex="-1">
@@ -35,14 +45,17 @@
       <section id="view-voices" class="view" aria-labelledby="voices-title" hidden></section>
       <section id="view-new-voice" class="view" aria-labelledby="new-voice-title" hidden></section>
       <section id="view-connect" class="view" aria-labelledby="connect-title" hidden></section>
-      <noscript><p class="notice">This page needs JavaScript. The API is available under <code>/v1</code>.</p></noscript>
+      <noscript><p class="notice">Supertonic Studio needs JavaScript. Turn it on in your browser settings and reload this page.</p></noscript>
     </main>
 
     <dialog id="key-dialog" aria-labelledby="key-dialog-title">
       <form method="dialog" class="key-form">
-        <h2 id="key-dialog-title">API key required</h2>
-        <p>This server asks for an API key. It is kept in this browser only and sent as a Bearer token.</p>
-        <label for="key-input">API key</label>
+        <h2 id="key-dialog-title">Access key needed</h2>
+        <p>
+          This Supertonic server is protected with an access key (also called an API key), like a
+          password. Ask the person who set it up for the key. It is saved in this browser only.
+        </p>
+        <label for="key-input">Access key</label>
         <input id="key-input" name="key" type="password" autocomplete="off" spellcheck="false" required />
         <p class="field-error" id="key-error" role="alert"></p>
         <div class="row end">

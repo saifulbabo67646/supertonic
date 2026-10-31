@@ -1,8 +1,9 @@
-// Build progress view: polls one job, shows stage, steps, ETA and loss; Finish now, Cancel, Try it.
+// Build progress view: polls one job, shows stage, steps, time left; Finish now, Cancel, Try it.
 
 import * as api from "./api.js";
 import {
   ACTIVE_STATES,
+  BUILDER_PLACES,
   duration,
   FINISHING_LABELS,
   METHOD_NAMES,
@@ -11,6 +12,7 @@ import {
 } from "./build-copy.js";
 import { loadResult, resultNodes } from "./build-result.js";
 import { h, replace, statusLine } from "./dom.js";
+import { friendlyError, friendlyJobError } from "./errors.js";
 
 const POLL_MS = 2000;
 const MAX_BACKOFF_MS = 30_000;
@@ -48,6 +50,7 @@ function stat(label) {
  *   pause: () => void, resume: () => void, current: () => object|null}}
  */
 export function createJobView(onChange) {
+  const step = h("p", { class: "step-eyebrow" });
   const title = h("h2", { id: "job-title", tabindex: "-1" });
   const badge = h("span", { class: "badge" });
   const meta = h("p", { class: "meta" });
@@ -57,7 +60,9 @@ export function createJobView(onChange) {
   const stepText = h("p", { class: "meta", id: "job-step" });
   const progressWrap = h("div", { class: "job-progress" }, bar, stepText);
   const left = stat("Time left");
-  const loss = stat("Loss");
+  // `accurate` optimises 1 - similarity, so its loss reads as a likeness score; the fast
+  // method's loss has no plain meaning and is not shown.
+  const loss = stat("Likeness so far");
   const elapsed = stat("Elapsed");
   const stats = h("dl", { class: "facts" }, left, loss, elapsed);
   const finish = h("button", {
@@ -80,6 +85,7 @@ export function createJobView(onChange) {
   const el = h(
     "section",
     { class: "job panel", "aria-labelledby": "job-title", hidden: true },
+    step,
     h("div", { class: "card-head" }, title, badge),
     meta,
     stage,
@@ -127,7 +133,7 @@ export function createJobView(onChange) {
           failures++;
           const wait = Math.min(MAX_BACKOFF_MS, POLL_MS * 2 ** failures) / 1000;
           status.set(
-            `Could not refresh the build: ${err.message}. Retrying in ${wait} s.`,
+            `Lost touch with the build; trying again in ${wait} seconds. ${friendlyError(err)}`,
             "error",
           );
         }
@@ -153,10 +159,15 @@ export function createJobView(onChange) {
     title.textContent = job.request.name;
     badge.textContent = STATE_LABELS[job.state] || job.state;
     badge.className = `badge state-${job.state}`;
-    meta.textContent = `${METHOD_NAMES[job.request.method] || job.request.method}, on the ${job.builder} builder`;
+    const place = BUILDER_PLACES[job.builder] || BUILDER_PLACES[job.builder?.split(":")[0]] || "";
+    meta.textContent = [METHOD_NAMES[job.request.method] || job.request.method, place]
+      .filter(Boolean)
+      .join(", ");
+    step.textContent = job.state === "succeeded" ? "Step 5 · Try your voice" : "Step 4 · Building";
     let stageText = "";
-    if (job.state === "queued") stageText = "Waiting for the builder to be free…";
-    else if (job.state === "running" && job.stopping) {
+    if (job.state === "queued") {
+      stageText = "Waiting to start. It begins as soon as the voice builder is free…";
+    } else if (job.state === "running" && job.stopping) {
       // Finish now ends the timbre stage only; the rhythm match and saving still follow.
       stageText = FINISHING_LABELS[p?.stage] || "Finishing: keeping the best result so far…";
     } else if (job.state === "running") {
@@ -182,8 +193,9 @@ export function createJobView(onChange) {
     const secs = estimateSecondsLeft(samples, p?.total);
     left.hidden = !timbre;
     left.value.textContent = secs === null ? "estimating…" : `about ${duration(secs)}`;
-    loss.hidden = !(active && p && typeof p.loss === "number");
-    if (p && typeof p.loss === "number") loss.value.textContent = p.loss.toFixed(4);
+    const likeness = job.request.method === "accurate" && p && typeof p.loss === "number";
+    loss.hidden = !(active && likeness);
+    if (likeness) loss.value.textContent = `${(1 - p.loss).toFixed(3)} (1 is a perfect match)`;
     tickElapsed();
     stats.hidden = job.state === "queued";
     actions.hidden = !active;
@@ -194,10 +206,10 @@ export function createJobView(onChange) {
       focusResult = true;
       title.focus();
     }
-    if (job.state === "failed") status.set(job.error?.message || "The build failed.", "error");
+    if (job.state === "failed") status.set(friendlyJobError(job.error), "error");
     else if (job.state === "cancelled") {
       // A forwarded build cancelled while its builder was unreachable says so in `error`.
-      const note = job.error?.message ? ` ${job.error.message}` : "";
+      const note = job.error ? ` ${friendlyJobError(job.error)}` : "";
       status.set(`This build was cancelled.${note}`, job.error ? "error" : "info");
     }
     else if (!active) status.clear();
@@ -225,7 +237,7 @@ export function createJobView(onChange) {
     try {
       update(await call(job.id));
     } catch (err) {
-      status.set(err.message, "error");
+      status.set(friendlyError(err), "error");
     } finally {
       button.disabled = false;
     }
@@ -246,7 +258,7 @@ export function createJobView(onChange) {
     });
     replace(
       confirm,
-      h("p", { text: "Cancel this build? Its progress is lost and no voice is saved." }),
+      h("p", { text: "Stop this build? Its progress is lost and no voice is saved." }),
       h("div", { class: "row end" }, keep, yes),
     );
     keep.focus();
@@ -288,7 +300,7 @@ export function createJobView(onChange) {
       api
         .job(job.id)
         .then((next) => mine === token && (update(next), schedule()))
-        .catch((err) => mine === token && status.set(err.message, "error"));
+        .catch((err) => mine === token && status.set(friendlyError(err), "error"));
     },
     current: () => job,
   };

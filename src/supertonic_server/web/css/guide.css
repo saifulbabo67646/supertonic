@@ -1,0 +1,217 @@
+/* Guidance for first-time users: header help link, welcome card, numbered steps, recording tips,
+   the no-builder card and the Connect copy rows. Loaded before responsive.css. */
+
+/* Header: status and help link */
+
+.mast-side {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+.help-link {
+  color: var(--accent);
+  font-weight: 500;
+  font-size: 0.9375rem;
+  text-underline-offset: 3px;
+}
+.server-status {
+  margin: 0;
+}
+
+/* Welcome (Speak, first visit) */
+
+.welcome-slot:empty {
+  display: none;
+}
+.welcome {
+  display: grid;
+  gap: 12px;
+  border-color: var(--accent);
+  background: linear-gradient(var(--accent-soft), var(--surface) 70%);
+}
+.welcome-lead {
+  margin: 0;
+  max-width: 70ch;
+}
+.welcome-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: welcome;
+}
+.welcome-list li {
+  counter-increment: welcome;
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+  background: var(--surface);
+  font-size: 0.9375rem;
+}
+.welcome-list a {
+  font-weight: 600;
+  color: var(--ink);
+}
+.welcome-list a::before {
+  content: counter(welcome) ". ";
+  color: var(--accent);
+}
+.welcome-guide {
+  color: var(--accent);
+  font-size: 0.9375rem;
+  margin-left: auto;
+}
+
+/* Numbered steps (New voice) */
+
+.step {
+  display: grid;
+  gap: 14px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+}
+.step-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.step-num {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+.step-eyebrow {
+  margin: 0;
+  color: var(--accent);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.choice-text {
+  display: grid;
+  gap: 2px;
+}
+.choice-label {
+  font-weight: 500;
+}
+.methods .choice {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+}
+.methods .choice:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.more-details summary,
+.more-snippets summary,
+.no-builder-note summary {
+  cursor: pointer;
+  font-weight: 500;
+  color: var(--muted);
+}
+.more-details[open],
+.more-snippets[open] {
+  display: grid;
+  gap: 14px;
+}
+
+/* Recording tips */
+
+.tips {
+  display: grid;
+  gap: 10px;
+  padding: 16px 18px;
+  border-radius: var(--r-panel);
+  background: var(--signal-soft);
+}
+.tips h3 {
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+.tips ul {
+  margin: 0;
+  padding-left: 1.2em;
+  display: grid;
+  gap: 4px;
+  font-size: 0.9375rem;
+}
+.reading-text {
+  margin: 0;
+  padding: 14px 16px;
+  border-left: 3px solid var(--signal);
+  border-radius: 0 var(--r-control) var(--r-control) 0;
+  background: var(--surface);
+  font: 1.0625rem/1.65 var(--font-script);
+}
+
+/* No voice builder */
+
+.no-builder {
+  display: grid;
+  gap: 10px;
+  max-width: 70ch;
+}
+.no-builder p {
+  margin: 0;
+}
+.no-builder .options {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 1.4em;
+}
+.no-builder a {
+  color: var(--accent);
+}
+.no-builder-note[open] {
+  display: grid;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+/* Voices: add from file (collapsed) */
+
+details.import {
+  display: block;
+}
+details.import > summary {
+  cursor: pointer;
+  list-style-position: inside;
+}
+.summary-title {
+  display: inline;
+}
+details.import[open] > summary {
+  margin-bottom: 8px;
+}
+
+/* Connect */
+
+.copy-row {
+  display: grid;
+  gap: 6px;
+}
+.copy-row .hint {
+  margin: 0;
+  max-width: 62ch;
+}
+.more-snippets {
+  margin-top: 8px;
+}
+.snippets {
+  min-width: 0;
+}

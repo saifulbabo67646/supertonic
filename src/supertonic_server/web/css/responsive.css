@@ -52,11 +52,18 @@ dialog::backdrop {
   .tabs a[aria-current="page"]::after {
     bottom: 0;
   }
+  .masthead {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .mast-side {
+    justify-self: end;
+    gap: 12px;
+  }
   .server-status {
     font-size: 0.8125rem;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 52vw;
+    min-width: 0;
   }
   main {
     padding-top: 24px;

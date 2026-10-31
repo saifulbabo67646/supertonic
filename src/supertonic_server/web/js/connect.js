@@ -1,92 +1,14 @@
-// Connect screen: base URL, auth status and copy-ready client snippets for this server.
+// Connect screen: the addresses other apps need, the API key in plain words, copy-ready snippets.
 
 import { BASE_URL } from "./api.js";
 import { getHealth, getVoices } from "./catalog.js";
+import { snippets } from "./connect-snippets.js";
 import { copyButton, h, replace, statusLine } from "./dom.js";
+import { friendlyError } from "./errors.js";
 import { askForKey } from "./keydialog.js";
 import { getApiKey, setApiKey } from "./store.js";
 
 const ui = {};
-const KEY_PLACEHOLDER = "your-api-key";
-
-/** Build every snippet for `origin`, `voice` and whether the server requires a key. */
-export function snippets(origin, voice, auth) {
-  const wsOrigin = origin.replace(/^http/, "ws");
-  const curlAuth = auth ? `  -H "Authorization: Bearer $SUPERTONIC_API_KEY" \\\n` : "";
-  const pyKey = auth ? 'os.environ["SUPERTONIC_API_KEY"]' : '"not-needed"';
-  const pyImport = auth ? "import os\n\n" : "";
-  const body = JSON.stringify({
-    model: "supertonic-3",
-    input: "Hello from Supertonic.",
-    voice,
-    response_format: "wav",
-  });
-  const wsQuery = new URLSearchParams({ voice, language: "en" });
-  const wsUrl = `${wsOrigin}/v1/audio/speech/websocket?${wsQuery}${auth ? `&api_key=${KEY_PLACEHOLDER}` : ""}`;
-  const mcp = {
-    mcpServers: {
-      supertonic: {
-        command: "supertonic-mcp",
-        env: { SUPERTONIC_BASE_URL: origin, SUPERTONIC_API_KEY: auth ? KEY_PLACEHOLDER : "" },
-      },
-    },
-  };
-  return [
-    {
-      id: "curl",
-      title: "curl",
-      note: "Writes a WAV file to the current directory.",
-      code:
-        `curl ${origin}/v1/audio/speech \\\n` +
-        curlAuth +
-        `  -H "Content-Type: application/json" \\\n` +
-        `  -d '${body}' \\\n` +
-        `  -o speech.wav`,
-    },
-    {
-      id: "openai",
-      title: "OpenAI Python SDK",
-      note: "Any OpenAI-compatible client works; point it at /v1.",
-      code:
-        `${pyImport}from openai import OpenAI\n\n` +
-        `client = OpenAI(base_url="${origin}/v1", api_key=${pyKey})\n\n` +
-        `response = client.audio.speech.create(\n` +
-        `    model="supertonic-3",\n` +
-        `    voice="${voice}",\n` +
-        `    input="Hello from Supertonic.",\n` +
-        `    response_format="wav",\n` +
-        `)\n` +
-        `response.write_to_file("speech.wav")`,
-    },
-    {
-      id: "livekit",
-      title: "LiveKit Agents",
-      note: "Uses the OpenAI plugin's TTS with this server as the backend.",
-      code:
-        `${pyImport}from livekit.plugins import openai\n\n` +
-        `tts = openai.TTS(\n` +
-        `    base_url="${origin}/v1",\n` +
-        `    api_key=${pyKey},\n` +
-        `    model="supertonic-3",\n` +
-        `    voice="${voice}",\n` +
-        `)`,
-    },
-    {
-      id: "ws",
-      title: "Realtime WebSocket",
-      note: auth
-        ? "Send Authorization: Bearer when your client can set headers; browsers use ?api_key= instead."
-        : "Stream text in with input_text_buffer.append, then input_text_buffer.commit.",
-      code: wsUrl,
-    },
-    {
-      id: "mcp",
-      title: "MCP server for agents",
-      note: "Add to your MCP client's configuration (for example Claude Desktop).",
-      code: JSON.stringify(mcp, null, 2),
-    },
-  ];
-}
 
 function snippetBlock(s) {
   const titleId = `snippet-${s.id}`;
@@ -104,13 +26,32 @@ function snippetBlock(s) {
   );
 }
 
+/** A labelled value with a copy button. */
+function copyRow(label, value, hint) {
+  return h(
+    "div",
+    { class: "copy-row" },
+    h("h2", { text: label }),
+    h(
+      "div",
+      { class: "row" },
+      h("code", { class: "base-url", text: value }),
+      copyButton(() => value, "Copy"),
+    ),
+    hint ? h("p", { class: "hint", text: hint }) : null,
+  );
+}
+
 function keyControls(auth) {
   const saved = Boolean(getApiKey());
+  const what =
+    "An API key is a password that apps send with every request, so that only people you " +
+    "trust can use the server.";
   const text = auth
-    ? saved
-      ? "This server requires an API key. One is saved in this browser."
-      : "This server requires an API key. None is saved in this browser yet."
-    : "This server does not require an API key.";
+    ? `${what} This server requires one: use the key it was started with (SUPERTONIC_API_KEY). ` +
+      (saved ? "It is saved in this browser." : "It is not saved in this browser yet.")
+    : `${what} This server does not need one, because only this computer can reach it. If ` +
+      "an app insists on a key, type anything, for example not-needed.";
   const buttons = [];
   if (auth || saved) {
     const set = h("button", {
@@ -137,7 +78,7 @@ function keyControls(auth) {
     });
     buttons.push(forget);
   }
-  return [h("p", { text }), h("div", { class: "row" }, buttons)];
+  return [h("p", { text }), buttons.length ? h("div", { class: "row" }, buttons) : null];
 }
 
 function renderKey(auth) {
@@ -149,29 +90,29 @@ export function mount(root) {
   ui.status = statusLine();
   ui.key = h("div", { class: "key-box" });
   ui.snippets = h("div", { class: "snippets" });
-  const base = h("code", { class: "base-url", text: BASE_URL });
+  ui.more = h("div", { class: "snippets" });
   replace(
     root,
     h(
       "header",
       { class: "view-head" },
       h("h1", { id: "connect-title", text: "Connect" }),
-      h("p", { text: "Use this server from code, agents and voice pipelines." }),
+      h("p", {
+        text:
+          "Use Supertonic from other apps, scripts and AI assistants. Most apps that support " +
+          "OpenAI text-to-speech work with it: give them the details below.",
+      }),
     ),
     h(
       "div",
       { class: "connect-top panel" },
-      h(
-        "div",
-        {},
-        h("h2", { text: "Base URL" }),
-        h(
-          "div",
-          { class: "row" },
-          base,
-          copyButton(() => BASE_URL, "Copy URL"),
-        ),
+      copyRow(
+        "Base URL",
+        `${BASE_URL}/v1`,
+        "Paste this where an app asks for an “OpenAI base URL”, “API base” or “endpoint”. " +
+          "Use supertonic-3 as the model and a voice name such as Mia.",
       ),
+      copyRow("Server address", BASE_URL, "The address of this page, for MCP and other tools."),
       h("div", {}, h("h2", { text: "API key" }), ui.key),
       h(
         "div",
@@ -186,6 +127,12 @@ export function mount(root) {
     ),
     ui.status,
     ui.snippets,
+    h(
+      "details",
+      { class: "more-snippets" },
+      h("summary", { text: "More examples for developers" }),
+      ui.more,
+    ),
   );
 }
 
@@ -193,16 +140,19 @@ export function mount(root) {
 export async function show() {
   try {
     const info = await getHealth();
-    let voice = "F1";
+    let voice = "Mia";
     try {
       const list = await getVoices();
-      if (list.length && !list.some((v) => v.id === voice)) voice = list[0].id;
+      const preset = list.find((v) => v.kind === "preset");
+      if (list.length && !list.some((v) => v.name === voice)) voice = (preset || list[0]).name;
     } catch {
       // Keep the default voice when the list needs a key that is not set yet.
     }
     renderKey(info.auth);
-    replace(ui.snippets, snippets(BASE_URL, voice, info.auth).map(snippetBlock));
+    const { main, more } = snippets(BASE_URL, voice, info.auth);
+    replace(ui.snippets, main.map(snippetBlock));
+    replace(ui.more, more.map(snippetBlock));
   } catch (err) {
-    ui.status.set(`Could not reach the server: ${err.message}`, "error");
+    ui.status.set(friendlyError(err), "error");
   }
 }

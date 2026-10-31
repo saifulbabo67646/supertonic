@@ -3,6 +3,7 @@
 import { buildFacts } from "./build-copy.js";
 import { getLanguages, getVoices, refreshVoices } from "./catalog.js";
 import { h } from "./dom.js";
+import { friendlyError } from "./errors.js";
 
 /**
  * Load what the panel needs (refreshing the voice list so the new voice shows everywhere).
@@ -15,7 +16,7 @@ export async function loadResult(voiceId) {
     const voice = (await getVoices()).find((v) => v.id === voiceId) || null;
     return { languages, voice, error: "" };
   } catch (err) {
-    return { languages: [], voice: null, error: err.message };
+    return { languages: [], voice: null, error: friendlyError(err) };
   }
 }
 
@@ -31,7 +32,7 @@ export function resultNodes(job, { languages, voice }) {
     lang = h(
       "select",
       { class: "compact", "aria-label": "Language to try" },
-      languages.map((l) => h("option", { value: l.code, text: `${l.name} (${l.code})` })),
+      languages.map((l) => h("option", { value: l.code, text: l.name })),
     );
     lang.value = languages.some((l) => l.code === "en") ? "en" : languages[0].code;
   }
@@ -42,14 +43,16 @@ export function resultNodes(job, { languages, voice }) {
   lang?.addEventListener("change", setHref);
   setHref();
   const nodes = [
-    h("p", { text: `${job.request.name} is ready as ${job.voice_id}.` }),
+    h("p", {
+      text: `Your voice “${job.request.name}” is ready. Pick a language and press Try it to hear it.`,
+    }),
     voice?.build ? buildFacts(voice.build) : null,
     h(
       "div",
       { class: "row" },
       lang,
       tryIt,
-      h("a", { class: "btn", href: `#/voices?voice=${vid}`, text: "Open voice card" }),
+      h("a", { class: "btn", href: `#/voices?voice=${vid}`, text: "See it in Voices" }),
     ),
   ];
   return { nodes, tryIt };

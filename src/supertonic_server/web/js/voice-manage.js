@@ -3,6 +3,7 @@
 import * as api from "./api.js";
 import { refreshVoices } from "./catalog.js";
 import { field, h, replace, statusLine } from "./dom.js";
+import { friendlyError } from "./errors.js";
 
 const parseTags = (raw) =>
   raw
@@ -29,7 +30,7 @@ export function editForm(voice, area, card, notify) {
     { class: "inline-form", novalidate: true },
     field("Name", name),
     field("Description", description),
-    field("Tags", tags, "Separate tags with commas."),
+    field("Tags", tags, "Words to filter by, separated by commas."),
     status,
     h("div", { class: "row end" }, cancel, save),
   );
@@ -54,7 +55,7 @@ export function editForm(voice, area, card, notify) {
       notify(`Saved changes to ${name.value.trim()}.`);
       await refreshVoices();
     } catch (err) {
-      status.set(err.message, "error");
+      status.set(friendlyError(err), "error");
       save.disabled = false;
     }
   });
@@ -71,7 +72,9 @@ export function confirmDelete(voice, area, card, notify) {
     "div",
     { class: "confirm", role: "group", "aria-label": `Confirm deleting ${voice.name}` },
     h("p", {
-      text: `Delete "${voice.name}"? Its style file is removed from this server and cannot be recovered.`,
+      text:
+        `Delete “${voice.name}” for good? It is removed from this server and cannot be ` +
+        "brought back. To keep a copy, press Download voice file first.",
     }),
     status,
     h("div", { class: "row end" }, keep, del),
@@ -88,7 +91,7 @@ export function confirmDelete(voice, area, card, notify) {
       await refreshVoices();
       document.querySelector(".voice-grid")?.focus();
     } catch (err) {
-      status.set(err.message, "error");
+      status.set(friendlyError(err), "error");
       del.disabled = false;
     }
   });

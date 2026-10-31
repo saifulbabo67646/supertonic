@@ -2,6 +2,7 @@
 
 import * as api from "./api.js";
 import { field, h, statusLine } from "./dom.js";
+import { friendlyError } from "./errors.js";
 
 const MAX_BYTES = 2 * 1024 * 1024;
 
@@ -15,21 +16,25 @@ export function buildImportForm(onImported) {
   const description = h("textarea", { rows: "2", maxlength: "2000" });
   const tags = h("input", { type: "text", autocomplete: "off" });
   const source = h("input", { type: "text", autocomplete: "off" });
-  const submit = h("button", { type: "submit", class: "btn primary", text: "Import voice" });
+  const submit = h("button", { type: "submit", class: "btn primary", text: "Add voice" });
   const status = statusLine();
 
   const form = h(
     "form",
     { class: "import-form", novalidate: true },
     field(
-      "Style JSON file",
+      "Voice file (.json)",
       file,
-      "A Supertonic 3 voice style, for example one exported from this page. Up to 2 MB.",
+      "A file saved with “Download voice file”, from this or another Supertonic. Up to 2 MB.",
     ),
-    field("Name", name),
-    field("Description", description),
-    field("Tags", tags, "Separate tags with commas, for example: narration, calm"),
-    field("Source note", source, "Where the voice came from, so you can credit or trace it later."),
+    field("Voice name", name),
+    field("Description (optional)", description),
+    field("Tags (optional)", tags, "Words to filter by, separated by commas, for example: narration, calm"),
+    field(
+      "Where is it from? (optional)",
+      source,
+      "For example: shared by Ana, made from her own voice. Helps you credit it later.",
+    ),
     status,
     h("div", { class: "row end" }, submit),
   );
@@ -43,12 +48,12 @@ export function buildImportForm(onImported) {
     e.preventDefault();
     const chosen = file.files[0];
     if (!chosen) {
-      status.set("Choose a style JSON file to import.", "error");
+      status.set("Choose a voice file (.json) first.", "error");
       file.focus();
       return;
     }
     if (chosen.size > MAX_BYTES) {
-      status.set("That file is larger than 2 MB, the limit for a style file.", "error");
+      status.set("That file is larger than 2 MB, so it is not a voice file.", "error");
       file.focus();
       return;
     }
@@ -64,26 +69,28 @@ export function buildImportForm(onImported) {
     data.append("tags", tags.value);
     data.append("source_note", source.value);
     submit.disabled = true;
-    status.set("Importing…", "busy");
+    status.set("Adding the voice…", "busy");
     try {
       const voice = await api.importVoice(data);
       form.reset();
-      status.set(`Imported ${voice.name} as ${voice.id}.`, "ok");
+      status.set(`Added ${voice.name}. It is now in the list above.`, "ok");
       await onImported(voice);
     } catch (err) {
-      status.set(err.message, "error");
+      status.set(friendlyError(err), "error");
     } finally {
       submit.disabled = false;
     }
   });
 
   return h(
-    "section",
-    { class: "import panel", "aria-labelledby": "import-title" },
-    h("h2", { id: "import-title", text: "Import voice" }),
+    "details",
+    { class: "import panel" },
+    h("summary", {}, h("h2", { class: "summary-title", text: "Add a voice from a file" })),
     h("p", {
       class: "hint",
-      text: "Add a custom voice from a style JSON file. It is stored on this server and available to every client.",
+      text:
+        "Someone sent you a Supertonic voice file, or you saved one from another computer? " +
+        "Add it here and it can be used everywhere: in Speak and in connected apps.",
     }),
     form,
   );
