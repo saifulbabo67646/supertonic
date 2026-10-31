@@ -127,15 +127,28 @@ curl -s http://127.0.0.1:8787/v1/tts/timestamps \
 
 ## Voices
 
-Ten built-in presets (`F1` to `F5`, `M1` to `M5`) plus custom voices you import. Ids of
-custom voices are derived from their name (`my-voice`, `my-voice-2` on collision), are at
-most 64 characters, and never use a Windows device name (`con`, `nul`, `com1`, ...: these get
+Ten built-in presets (`F1` to `F5`, `M1` to `M5`) plus custom voices you import.
+
+Every built-in voice also has a name: `F1` is Mia, `F2` Nora, `F3` Lena, `F4` Sofia, `F5`
+Yuna, `M1` Hugo, `M2` Diego, `M3` Ravi, `M4` Felix and `M5` Omar (see
+[voices.md](voices.md) for what each sounds like). A name works anywhere an id does, in any
+capitalisation: the `voice` field of `/v1/audio/speech` and `/v1/tts/timestamps`, the
+realtime WebSocket, the MCP tools and `GET /v1/voices/{id}` (also `/style` and
+`/preview`). A reference is matched in this order: exact id, id in any capitalisation,
+built-in name, custom voice name (`400 ambiguous_voice` when several custom voices share
+it). Responses always carry the canonical id (`voice`, `X-Voice-Id`). Listings give every
+voice the same fields; for presets `name` and `description` are the built-in ones. A custom
+voice cannot be imported, built or renamed to a built-in name or id:
+`409 voice_name_taken`, `param: "name"`.
+
+Ids of custom voices are derived from their name (`my-voice`, `my-voice-2` on collision),
+are at most 64 characters, and never use a Windows device name (`con`, `nul`, `com1`, ...: these get
 a `-voice` suffix). Names are at most 100 characters. Each custom voice lives in
 `SUPERTONIC_DATA_DIR/voices/<id>/`; the folder name is the id.
 
 ```bash
 curl -s 'http://127.0.0.1:8787/v1/voices?kind=preset'     # filters: kind=preset|custom, tag=...
-curl -s http://127.0.0.1:8787/v1/voices/F1
+curl -s http://127.0.0.1:8787/v1/voices/F1                    # or /v1/voices/mia
 curl -s http://127.0.0.1:8787/v1/voices/F1/style -o f1.json   # export the style JSON
 curl -s -o preview.wav 'http://127.0.0.1:8787/v1/voices/F1/preview?language=en'
 ```
@@ -176,7 +189,7 @@ derive from the Supertonic model, so the OpenRAIL-M terms apply to them too.
 | field | |
 |---|---|
 | `files` | 1 to 3 audio files (any common format), at most 25 MB in total; 3 to 60 s of speech after trimming |
-| `name` | required, at most 100 characters |
+| `name` | required, at most 100 characters, not a built-in voice's name or id (`409 voice_name_taken`) |
 | `description`, `tags` | optional; `tags` is comma-separated (so a tag cannot contain a comma) |
 | `source_note` | required: where the recording comes from |
 | `consent` | required, the string `true`: you have the right to clone this voice |

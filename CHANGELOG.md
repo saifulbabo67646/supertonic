@@ -8,6 +8,13 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- Named built-in voices: `F1` to `F5` are Mia, Nora, Lena, Sofia and Yuna, `M1` to `M5` are
+  Hugo, Diego, Ravi, Felix and Omar, each with a one-line description based on measured
+  pitch and pace (`docs/voices.md`, `scripts/describe_presets.py`). A name works anywhere
+  an id does (REST, OpenAI endpoint, WebSocket, MCP, web UI), in any capitalisation; ids
+  keep working and responses still return the id. Custom voices cannot take a built-in
+  name or id (`409 voice_name_taken`). The web UI shows "Mia · F1" labels and the
+  selected voice's description.
 - Community files for the public repository: a full Contributor Covenant 2.1, a security
   policy with supported versions and private reporting, GitHub issue forms, a pull request
   template, a docs index (`docs/README.md`), CodeQL scanning and weekly Dependabot updates.

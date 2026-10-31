@@ -14,7 +14,7 @@ small web UI. Runs on CPU (ONNX Runtime) on macOS and Windows (Linux should work
 - **OpenAI-compatible** `POST /v1/audio/speech` (mp3, opus, aac, flac, wav, pcm) with sentence-level streaming for `wav` and `pcm`.
 - **Realtime WebSocket** for streaming LLM text in and audio out, with barge-in (`context.cancel`) and several independent contexts per connection.
 - **Word timestamps** (`POST /v1/tts/timestamps`), clearly labelled as estimated.
-- **Voice library**: 10 built-in voices, import/export/rename/delete custom styles.
+- **Voice library**: 10 built-in voices with names (Mia, Hugo, ...; see [docs/voices.md](docs/voices.md)), import/export/rename/delete custom styles.
 - **Voice building**: clone a voice from 10 to 30 s of speech on an NVIDIA GPU (Windows or Linux), or forward builds from a Mac to such a machine; the result is an ordinary voice that runs on CPU everywhere.
 - **MCP server** (`supertonic-mcp`) so Claude Code and other agents can speak, audition and build voices.
 - **Web UI** at `/` for speaking, browsing voices and copying connection snippets.
@@ -48,6 +48,9 @@ curl -s http://127.0.0.1:8787/v1/audio/speech \
   -H 'Content-Type: application/json' \
   -d '{"input":"Hello from Supertonic.","voice":"F1"}' -o hello.mp3
 ```
+
+`F1` is the built-in voice named Mia; `"voice":"Mia"` works too. All ten voices, with what
+they sound like, are listed in [docs/voices.md](docs/voices.md).
 
 ## Configuration
 
@@ -203,7 +206,8 @@ pauses until it catches up. Authentication or parameter errors arrive as a
 
 `supertonic-mcp` is a stdio MCP server that talks to a running Supertonic server and saves
 audio files on the machine it runs on. Tools: `list_languages`, `list_voices`, `speak`
-(optionally with word timestamps) and `preview_voice`, plus voice building:
+(optionally with word timestamps) and `preview_voice` (a voice is an id like `F1` or a name
+like `Mia`), plus voice building:
 `build_voice` (reference audio paths, name, `source_note`, `consent`, `method` `accurate` or
 `fast`), `get_job`, `list_jobs` and `finish_job`.
 
