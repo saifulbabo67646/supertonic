@@ -8,7 +8,10 @@
 the [Supertonic 3](https://huggingface.co/Supertone/supertonic-3) voice model, with a
 friendly web Studio, an OpenAI-compatible API and tools for AI agents.
 
-<!-- DEMO -->
+[![Supertonic Studio: type a line, pick a voice and hear it](docs/media/demo.gif)](docs/media/demo.mp4)
+
+▶ [Watch the full demo with sound](docs/media/demo.mp4) (1½ minutes): starting it, speaking in
+two languages, the built-in voices, building a new voice and connecting apps.
 
 ## What you can do
 

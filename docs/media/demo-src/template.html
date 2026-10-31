@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=$width, height=$height" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+  rel="stylesheet" />
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+<style>
+$css
+</style>
+</head>
+<body>
+<div id="root" data-composition-id="main" data-start="0" data-duration="$duration"
+  data-width="$width" data-height="$height">
+<div class="bg"></div>
+
+<div id="title" class="card clip" data-start="$title_start" data-duration="$title_length">
+  <div class="logo"><svg viewBox="0 0 32 32"><path d="$logo"/></svg></div>
+  <h1>Supertonic Server</h1>
+  <p class="lead">Natural speech in <b>31 languages</b>, on your own computer.</p>
+  <p class="tag">Free and open source</p>
+</div>
+
+<div id="finder" class="mac clip" data-start="$finder_start" data-duration="$finder_length">
+  <div class="chrome"><span class="dot r"></span><span class="dot y"></span>
+    <span class="dot g"></span><div class="wtitle">supertonic</div></div>
+  <div class="files">$files</div>
+  <div class="pointer"><svg viewBox="0 0 26 26" width="34" height="34"><path d="$pointer"
+    fill="#111" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg></div>
+</div>
+
+<div id="terminal" class="mac term clip" data-start="$terminal_start"
+  data-duration="$terminal_length">
+  <div class="chrome"><span class="dot r"></span><span class="dot y"></span>
+    <span class="dot g"></span><div class="wtitle">Start Supertonic.command</div></div>
+  <div class="tbody">$terminal</div>
+</div>
+
+<div id="window">
+  <div class="chrome"><span class="dot r"></span><span class="dot y"></span>
+    <span class="dot g"></span>
+    <div class="address">127.0.0.1:8787</div>
+  </div>
+  <div class="viewport">
+$shots
+  </div>
+</div>
+
+<div id="end" class="card clip" data-start="$end_start" data-duration="$end_length">
+  <div class="logo"><svg viewBox="0 0 32 32"><path d="$logo"/></svg></div>
+  <h1>Supertonic Server</h1>
+  <p class="url">github.com/saifulbabo67646/supertonic</p>
+  <p class="tag">MIT licence · runs offline · 31 languages</p>
+</div>
+
+$overlays
+</div>
+<script>
+const tl = gsap.timeline({ paused: true });
+$script
+window.__timelines = window.__timelines || {};
+window.__timelines["main"] = tl;
+tl.seek(0);
+</script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+{
+  "voice": "Nora",
+  "language": "en",
+  "speed": 1.05,
+  "total_steps": 16,
+  "say": {
+    "OpenAI-compatible": "Open AI compatible"
+  },
+  "lines": {
+    "intro": "Meet Supertonic Server: natural speech in thirty-one languages, on your own computer. Free and open source.",
+    "launch": "Double-click the start file. It installs what it needs and opens the Studio in your browser.",
+    "speak": "Type anything, pick a voice, and press Generate.",
+    "languages": "The same voice speaks every language.",
+    "voices": "Ten built-in voices, each with a name and a style.",
+    "clone": "Or make a voice of your own from about half a minute of speech.",
+    "build": "Confirm you have permission, choose Best match, and build it on a graphics card.",
+    "ready": "And here it is.",
+    "connect": "Plug it into your apps: an OpenAI-compatible API, tools for AI agents, and realtime streaming.",
+    "outro": "Supertonic Server. Free, open source, and it runs offline."
+  }
+}

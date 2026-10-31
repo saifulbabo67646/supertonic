@@ -1,0 +1,75 @@
+/* Look of the demo video: a dark stage, the Studio in a browser window, captions below. */
+@font-face { font-family: "Hiragino Sans"; src: local("Hiragino Sans"); }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 1920px; height: 1080px; overflow: hidden; background: #0a0e1f; }
+#root { position: relative; width: 1920px; height: 1080px; overflow: hidden;
+  font-family: Inter, "Helvetica Neue", Arial, "Hiragino Sans", sans-serif; color: #eef1ff; }
+.bg { position: absolute; inset: 0;
+  background:
+    radial-gradient(900px 600px at 18% 12%, rgba(48, 80, 216, 0.45), transparent 70%),
+    radial-gradient(800px 600px at 85% 90%, rgba(124, 77, 255, 0.30), transparent 70%),
+    radial-gradient(700px 500px at 80% 10%, rgba(0, 180, 216, 0.16), transparent 70%),
+    #0a0e1f; }
+
+/* browser window */
+#window { opacity: 0; position: absolute; left: 240px; top: 30px; width: 1440px; height: 940px; border-radius: 14px;
+  overflow: hidden; background: #f3f4fa; box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255,255,255,0.08); }
+.chrome { height: 40px; display: flex; align-items: center; gap: 8px; padding: 0 16px; background: #e8eaf2;
+  border-bottom: 1px solid #d5d8e4; position: relative; }
+.dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+.dot.r { background: #ff5f57; } .dot.y { background: #febc2e; } .dot.g { background: #28c840; }
+.address { position: absolute; left: 50%; transform: translateX(-50%); width: 520px; height: 26px; border-radius: 7px;
+  background: #fff; color: #3d4256; font-size: 14px; display: flex; align-items: center; justify-content: center; gap: 6px; }
+.viewport { position: absolute; left: 0; top: 40px; width: 1440px; height: 900px; overflow: hidden; background: #f3f4fa; }
+.shot { position: absolute; inset: 0; overflow: hidden; opacity: 0; }
+.zoom { position: absolute; left: 0; top: 0; width: 1440px; height: 900px; transform-origin: 0 0; }
+.zoom video, .zoom img { width: 1440px; height: 900px; display: block; object-fit: fill; }
+
+/* cards */
+.card { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  text-align: center; }
+.card .logo { width: 132px; height: 132px; border-radius: 32px; background: linear-gradient(140deg, #4a6cff, #3050d8 55%, #5b3fd8);
+  display: grid; place-items: center; box-shadow: 0 20px 60px rgba(48, 80, 216, 0.55); margin-bottom: 44px; }
+.card .logo svg { width: 92px; height: 92px; fill: none; stroke: #fff; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.card h1 { font-size: 104px; font-weight: 800; letter-spacing: -0.035em; line-height: 1; }
+.card .lead { margin-top: 30px; font-size: 44px; font-weight: 500; color: #c9d1ff; letter-spacing: -0.01em; }
+.card .lead b { color: #fff; font-weight: 700; }
+.card .tag { margin-top: 30px; font-size: 30px; font-weight: 600; color: #0a0e1f; background: #9fb3ff; padding: 10px 26px;
+  border-radius: 999px; }
+.card .url { margin-top: 34px; font-size: 46px; font-weight: 600; color: #fff; padding: 14px 34px; border-radius: 16px;
+  background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.18); letter-spacing: -0.01em; }
+
+/* desktop windows for the launcher */
+.mac { position: absolute; border-radius: 12px; overflow: hidden; box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55); }
+.mac .wtitle { position: absolute; left: 50%; transform: translateX(-50%); font-size: 15px; font-weight: 600; color: #4b5064; }
+#finder { left: 460px; top: 230px; width: 1000px; height: 560px; background: #fbfbfd; }
+.files { display: grid; grid-template-columns: repeat(4, 1fr); gap: 34px 10px; padding: 46px 40px; }
+.file { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 12px 6px; border-radius: 10px; }
+.file span { font-size: 17px; color: #22263a; text-align: center; }
+.file i { width: 76px; height: 64px; display: block; border-radius: 8px; }
+.file.folder i { background: linear-gradient(#7cc4ff, #4ea3f0); border-radius: 6px 6px 8px 8px; }
+.file.doc i { width: 56px; height: 70px; background: #fff; border: 1px solid #cfd3df; border-radius: 4px; }
+.file.app i { width: 70px; height: 70px; background: linear-gradient(140deg, #4a6cff, #3050d8 55%, #5b3fd8); border-radius: 16px;
+  box-shadow: 0 6px 16px rgba(48, 80, 216, 0.4); }
+.file.target span { font-weight: 600; }
+#finder .pointer { position: absolute; left: 0; top: 0; width: 34px; height: 34px; }
+.term { left: 330px; top: 300px; width: 1260px; height: 420px; background: #12141c; }
+.term .chrome { background: #2a2d38; border-bottom: 1px solid #3a3e4c; }
+.term .wtitle { color: #c8ccd8; }
+.tbody { padding: 26px 30px; font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 22px; line-height: 1.6; color: #e6e8ef; }
+.ln.dim { color: #8c92a8; }
+.ln.ok { color: #6ee7a0; font-weight: 700; }
+
+/* overlays */
+.chip { position: absolute; padding: 14px 24px; border-radius: 18px; background: rgba(10, 14, 31, 0.88);
+  color: #fff; font-size: 26px; font-weight: 600; line-height: 1.35; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(159, 179, 255, 0.45); }
+/* in the caption band, when no one is speaking */
+.chip.band { left: 0; right: 0; bottom: 30px; margin: 0 auto; width: max-content; white-space: nowrap;
+  border-radius: 999px; }
+/* over the empty right side of the code blocks on Connect */
+.chip.side { right: 290px; top: 540px; text-align: left; }
+.cap { position: absolute; left: 0; right: 0; bottom: 44px; text-align: center; font-size: 34px; font-weight: 600;
+  line-height: 1.2; letter-spacing: -0.005em; text-shadow: 0 2px 10px rgba(0, 0, 0, 0.6); }
+.cap.ui span { font-style: italic; font-weight: 500; color: #c9d1ff; }
+.note { position: absolute; left: 0; right: 0; bottom: 10px; text-align: center; font-size: 22px; color: #9aa3c7; }
