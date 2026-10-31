@@ -9,6 +9,8 @@ import numpy as np
 import pytest
 
 from supertonic_server.builder.extract.common.pitch import (
+    PITCH_TOLERANCE,
+    START_PITCH_TOLERANCE,
     choose_start,
     describe_hz,
     log_distance,
@@ -77,8 +79,39 @@ SCAN = [
 
 def test_male_reference_never_starts_from_a_female_preset() -> None:
     index, reason = choose_start(SCAN, MALE_REF)
-    assert index == 0  # M1: within ±22% of 129 Hz and the lowest loss there
+    assert index == 0  # M1: within ±12% of 129 Hz and the lowest loss there
     assert "near 129 Hz" in reason
+
+
+# The owner's 36 s male recording on the Windows builder (accurate, ECAPA loss on the scan
+# sentence, F0 of the same waveform). At a 0.2 tolerance F5 (156 Hz) competed and won.
+OWNER_REF = 130.0
+OWNER_SCAN = {
+    "F1": (0.9658, 175.0),
+    "F2": (0.8998, 184.0),
+    "F3": (0.8328, 167.0),
+    "F4": (0.8161, 188.0),
+    "F5": (0.9337, 156.0),
+    "M1": (1.0154, 129.0),
+    "M2": (0.9589, 90.0),
+    "M3": (0.9679, 92.0),
+    "M4": (0.9524, 108.0),
+    "M5": (1.0340, 84.0),
+}
+
+
+def test_owner_recording_starts_from_m1() -> None:
+    names = list(OWNER_SCAN)
+    index, reason = choose_start(list(OWNER_SCAN.values()), OWNER_REF)
+    assert names[index] == "M1"  # the only preset within ±12%, though its loss is the worst
+    assert reason == "lowest loss of 1 preset near 130 Hz"
+
+
+def test_start_tolerance_is_tighter_than_the_match_tolerance() -> None:
+    assert (START_PITCH_TOLERANCE, PITCH_TOLERANCE) == (0.12, 0.2)
+    # F5 against the owner's 130 Hz: too far to start from, close enough to count as a match
+    assert START_PITCH_TOLERANCE < log_distance(156.0, OWNER_REF) <= PITCH_TOLERANCE
+    assert pitch_report(OWNER_REF, 156.0)["pitch_match"] is True
 
 
 def test_female_reference_keeps_the_lowest_loss_among_female_presets() -> None:
@@ -87,7 +120,7 @@ def test_female_reference_keeps_the_lowest_loss_among_female_presets() -> None:
 
 
 def test_no_preset_near_the_reference_uses_the_two_nearest_by_pitch() -> None:
-    # 70 Hz: nothing within ±22%; the two nearest by pitch are M2 (98) and M1 (136)
+    # 70 Hz: nothing within ±12%; the two nearest by pitch are M2 (98) and M1 (136)
     index, reason = choose_start(SCAN, 70.0)
     assert index == 0  # M1 beats M2 on loss; F4 (lower loss) is not among the two
     assert "nearest by pitch" in reason

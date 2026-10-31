@@ -63,8 +63,9 @@ All notable changes to this project are documented here. The format is based on
 - Voice building chooses its start voice by pitch first, so a man's recording no longer
   becomes a woman's voice. Both methods measure the median pitch of the recording and of
   each built-in voice in the scan (shown as `F4: 0.3123 · 198 Hz`); only the built-in
-  voices within about ±22% compete (the two nearest by pitch when none is), and the best
-  judge score among them wins. The build report adds `pitch_reference_hz`,
+  voices within about ±12% (log-distance 0.12) compete (the two nearest by pitch when none
+  is), and the best judge score among them wins. The built voice counts as a pitch match
+  within about ±22% (log-distance 0.2). The build report adds `pitch_reference_hz`,
   `pitch_voice_hz` and `pitch_match`, MCP `get_job` returns the new voice's `build`
   report, and the Studio warns when a finished voice sounds higher or lower than its
   recording.

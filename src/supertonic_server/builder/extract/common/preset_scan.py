@@ -41,7 +41,7 @@ def nearest_preset(
     """``(preset, loss, stopped)`` of the start preset for ``prompt``.
 
     Each preset's ``style_ttl`` is synthesised once; its loss and the median F0 of that
-    waveform are measured. The presets within about ±22% of ``reference_f0`` compete (the
+    waveform are measured. The presets within about ±12% of ``reference_f0`` compete (the
     two nearest by pitch when none is); among them the lowest loss wins (see
     :func:`~supertonic_server.builder.extract.common.pitch.choose_start`). Without
     ``reference_f0`` the lowest loss over all presets wins.

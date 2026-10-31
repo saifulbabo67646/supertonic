@@ -35,8 +35,14 @@ QUIET = 0.05
 """Frames below this fraction of the 95th-percentile frame RMS are silence."""
 MIN_VOICED = 10
 """Fewer voiced frames than this (0.1 s) and the pitch is unknown."""
+START_PITCH_TOLERANCE = 0.12
+"""Largest ``|ln(f0 / reference)|`` of a preset that may be the start voice (about ±12%).
+
+Tighter than :data:`PITCH_TOLERANCE`: at 0.2 a 130 Hz male recording let a 156 Hz female
+preset compete, and the method's loss preferred it.
+"""
 PITCH_TOLERANCE = 0.2
-"""Largest ``|ln(f0 / reference)|`` that still counts as the same pitch (about ±22%)."""
+"""Largest ``|ln(f0 / reference)|`` at which the built voice still matches (about ±22%)."""
 FALLBACK_COUNT = 2
 """Presets nearest by pitch that compete when none is within the tolerance."""
 _CHUNK = 256  # frames per FFT batch, to bound memory on long recordings
@@ -125,7 +131,7 @@ def choose_start(
 ) -> tuple[int, str]:
     """Pick the start preset from ``(loss, f0)`` per preset; ``(index, reason)``.
 
-    The presets within :data:`PITCH_TOLERANCE` of ``reference_f0`` compete; when none is,
+    The presets within :data:`START_PITCH_TOLERANCE` of ``reference_f0`` compete; when none is,
     the :data:`FALLBACK_COUNT` nearest by pitch do. Among them the lowest loss wins. Without
     a reference pitch (or any preset pitch) the lowest loss over all presets wins.
     """
@@ -140,10 +146,11 @@ def choose_start(
     }
     if not pitched:
         return _lowest(everyone, losses), "no preset's pitch is clear; lowest loss"
-    near = [i for i, dist in pitched.items() if dist <= PITCH_TOLERANCE]
+    near = [i for i, dist in pitched.items() if dist <= START_PITCH_TOLERANCE]
     ref = f"{reference_f0:.0f} Hz"
     if near:
-        return _lowest(near, losses), f"lowest loss of {len(near)} presets near {ref}"
+        presets = "1 preset" if len(near) == 1 else f"{len(near)} presets"
+        return _lowest(near, losses), f"lowest loss of {presets} near {ref}"
     nearest = sorted(pitched, key=pitched.__getitem__)[:FALLBACK_COUNT]
     return _lowest(nearest, losses), f"no preset near {ref}; lowest loss of the nearest by pitch"
 

@@ -66,19 +66,23 @@ score says. So the start voice is chosen by pitch first:
 2. In the `preset` stage it has each of the ten built-in voices speak the first sentence,
    scores it with the method's judge and measures its pitch from the same audio. The
    progress line shows both, for example `F4: 0.3123 · 198 Hz`.
-3. Only the built-in voices within about ±22% of the reference's pitch (a log-distance of
-   0.2) compete; when none is that close, the two nearest by pitch do. Among them the best
-   judge score wins. When the reference's pitch cannot be measured (too little voiced
-   speech), the best score over all ten wins, as before.
+3. Only the built-in voices within about ±12% of the reference's pitch (a log-distance of
+   0.12, `START_PITCH_TOLERANCE`) compete; when none is that close, the two nearest by
+   pitch do. Among them the best judge score wins. When the reference's pitch cannot be
+   measured (too little voiced speech), the best score over all ten wins, as before.
 
-The worker log names the chosen voice and the reason, for example `start preset M1 (loss 0.4012,
-136 Hz): lowest loss of 3 presets near 129 Hz`.
+The worker log names the chosen voice and the reason, for example
+`start preset M1 (loss 1.0154, 129 Hz): lowest loss of 1 preset near 130 Hz`. That was a
+man's recording at 130 Hz: the judge scored every female voice closer than every male one,
+and with a looser ±22% the 156 Hz female voice F5 would have competed and won.
 
 ### The pitch check
 
 After the build the new voice speaks one sentence and its median pitch is measured the
-same way. The report keeps both pitches and whether they match (within the same ±22%):
-`pitch_reference_hz`, `pitch_voice_hz` and `pitch_match`. When they do not match, the
+same way. The report keeps both pitches and whether they match (`pitch_reference_hz`,
+`pitch_voice_hz` and `pitch_match`). They match within about ±22% (a log-distance of 0.2,
+`PITCH_TOLERANCE`), looser than the ±12% for the start voice because the search may move
+the pitch a little. When they do not match, the
 Studio's finished build says "This voice sounds higher (or lower) than your recording. Try
 making it again with a longer, clearer recording." A short, noisy or whispered recording
 is the usual cause: there is too little clear voice to measure or to copy.
