@@ -93,17 +93,14 @@ def _frame_f0(d: np.ndarray, sr: int, min_lag: int, max_lag: int) -> float | Non
     return f0 if F0_MIN <= f0 <= F0_MAX else None
 
 
-def median_f0(wav: np.ndarray, sr: int) -> float | None:
-    """Median F0 in Hz of the voiced frames of ``wav`` (1-D, any amplitude), or ``None``.
-
-    ``None`` when fewer than :data:`MIN_VOICED` frames are voiced (silence, noise, too short).
-    """
+def _voiced_f0s(wav: np.ndarray, sr: int) -> list[float]:
+    """F0 in Hz of each voiced frame of ``wav`` (1-D, any amplitude); silence is per clip."""
     x = np.asarray(wav, dtype=np.float64).reshape(-1)
     length, hop = round(FRAME_S * sr), max(1, round(HOP_S * sr))
     min_lag, max_lag = int(sr / F0_MAX), math.ceil(sr / F0_MIN)
     window = length - max_lag
     if window <= 0 or len(x) < length or not np.isfinite(x).all():
-        return None
+        return []
     frames = _frames(x, length, hop)
     rms = np.sqrt(np.mean(frames[:, :window] ** 2, axis=1))
     loud = float(np.percentile(rms, 95))
@@ -114,6 +111,25 @@ def median_f0(wav: np.ndarray, sr: int) -> float | None:
             f0 = _frame_f0(d, sr, min_lag, max_lag)
             if f0 is not None:
                 f0s.append(f0)
+    return f0s
+
+
+def median_f0(wav: np.ndarray, sr: int) -> float | None:
+    """Median F0 in Hz of the voiced frames of ``wav`` (1-D, any amplitude), or ``None``.
+
+    ``None`` when fewer than :data:`MIN_VOICED` frames are voiced (silence, noise, too short).
+    """
+    return pooled_median_f0([wav], sr)
+
+
+def pooled_median_f0(wavs: Sequence[np.ndarray], sr: int) -> float | None:
+    """One median F0 in Hz over the voiced frames of all ``wavs`` together, or ``None``.
+
+    Each clip is judged for silence against its own loudness; the voiced frames are then
+    pooled, so one odd sentence does not decide the pitch. ``None`` when fewer than
+    :data:`MIN_VOICED` frames are voiced in all clips together.
+    """
+    f0s = [f0 for wav in wavs for f0 in _voiced_f0s(wav, sr)]
     return float(np.median(f0s)) if len(f0s) >= MIN_VOICED else None
 
 

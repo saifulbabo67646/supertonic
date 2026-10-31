@@ -65,10 +65,11 @@ All notable changes to this project are documented here. The format is based on
   each built-in voice in the scan (shown as `F4: 0.3123 · 198 Hz`); only the built-in
   voices within about ±12% (log-distance 0.12) compete (the two nearest by pitch when none
   is), and the best judge score among them wins. The built voice counts as a pitch match
-  within about ±22% (log-distance 0.2). The build report adds `pitch_reference_hz`,
-  `pitch_voice_hz` and `pitch_match`, MCP `get_job` returns the new voice's `build`
-  report, and the Studio warns when a finished voice sounds higher or lower than its
-  recording.
+  within about ±22% (log-distance 0.2), measured as one median over the voiced frames of
+  the first four sentences it speaks (one sentence alone is too noisy: 99 Hz for a 130 Hz
+  speaker). The build report adds `pitch_reference_hz`, `pitch_voice_hz` and
+  `pitch_match`, MCP `get_job` returns the new voice's `build` report, and the Studio
+  warns when a finished voice sounds higher or lower than its recording.
 - A custom voice can no longer take over a built-in name: lookups now try the exact id,
   then the built-in name, then the id in any capitalisation, then the custom voice name, so
   `"Mia"` always means `F1` (a voice saved earlier with the id `mia` still answers to

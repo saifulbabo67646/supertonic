@@ -16,6 +16,7 @@ from supertonic_server.builder.extract.common.pitch import (
     log_distance,
     median_f0,
     pitch_report,
+    pooled_median_f0,
 )
 
 
@@ -49,6 +50,21 @@ def test_pitch_ignores_silence_around_speech(sr: int) -> None:
     gap = np.zeros(sr)
     found = median_f0(np.concatenate([gap, harmonic(129.0, sr, 1.0), gap]), sr)
     assert found == pytest.approx(129.0, rel=0.03)
+
+
+def test_pooled_pitch_takes_one_median_over_all_clips() -> None:
+    sr = 16000
+    clips = [harmonic(f0, sr, 1.0) for f0 in (100.0, 130.0, 130.0, 135.0)]
+    assert median_f0(clips[0], sr) == pytest.approx(100.0, rel=0.03)  # one sentence misleads
+    assert pooled_median_f0(clips, sr) == pytest.approx(130.0, rel=0.03)
+
+
+def test_pooled_pitch_judges_silence_per_clip_and_needs_enough_frames() -> None:
+    sr = 16000
+    quiet, loud = harmonic(130.0, sr, 1.0, amplitude=0.01), harmonic(200.0, sr, 0.3)
+    assert pooled_median_f0([quiet, quiet, loud], sr) == pytest.approx(130.0, rel=0.03)
+    assert pooled_median_f0([], sr) is None
+    assert pooled_median_f0([np.zeros(sr), harmonic(110.0, sr, 0.05)], sr) is None
 
 
 @pytest.mark.parametrize("sr", [16000, 44100])

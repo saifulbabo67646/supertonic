@@ -26,11 +26,14 @@ from supertonic_server.builder.extract.base import (
 from supertonic_server.builder.extract.common.audio import load_mono
 from supertonic_server.builder.extract.common.duration import RATE_SR, duration_inversion
 from supertonic_server.builder.extract.common.frozen_tts import SR, FrozenTTS, Prompt
-from supertonic_server.builder.extract.common.pitch import median_f0, pitch_report
+from supertonic_server.builder.extract.common.pitch import pitch_report, pooled_median_f0
 from supertonic_server.builder.extract.common.style_file import style_to_json
 from supertonic_server.builder.extract.duration_config import DurationConfig
 
 logger = logging.getLogger(__name__)
+
+PITCH_PROMPTS = 4
+"""Prompts the after-build pitch check speaks: one sentence alone is too noisy to judge by."""
 
 
 def finish_with_duration(
@@ -57,8 +60,9 @@ def finish_with_duration(
     ``prompts`` are the sentences the speaking rate is measured on; ``extra`` adds
     method-specific report keys (see :func:`~supertonic_server.builder.extract.base.make_report`).
 
-    The report also has ``pitch_reference_hz`` (``reference_f0``), ``pitch_voice_hz`` (the
-    median F0 of ``prompts[0]`` spoken with the final style, as inference speaks it) and
+    The report also has ``pitch_reference_hz`` (``reference_f0``), ``pitch_voice_hz`` (one
+    median F0 over the first :data:`PITCH_PROMPTS` prompts spoken with the final style, as
+    inference speaks them) and
     ``pitch_match`` (see :func:`~supertonic_server.builder.extract.common.pitch.pitch_report`).
 
     Finish now ends only the timbre stage: when the stop was already requested on entry, the
@@ -97,16 +101,19 @@ def finish_with_duration(
 def _voice_f0(
     prompts: Sequence[Prompt], ttl: torch.Tensor, dp: torch.Tensor, tts: FrozenTTS
 ) -> float | None:
-    """Median F0 of the first prompt spoken with the final style (``None`` without prompts).
+    """Pooled median F0 of the first :data:`PITCH_PROMPTS` prompts in the final style.
 
-    Only a diagnostic: a failure here (for example out of GPU memory) is logged and gives
-    ``None``, never costs the finished build.
+    ``None`` without prompts. Only a diagnostic: a failure here (for example out of GPU
+    memory) is logged and gives ``None``, never costs the finished build.
     """
     if not prompts:
         return None
     try:
-        wav = np.asarray(tts.synthesize_at_own_length(prompts[0], ttl, dp))
+        wavs = [
+            np.asarray(tts.synthesize_at_own_length(prompt, ttl, dp))
+            for prompt in prompts[:PITCH_PROMPTS]
+        ]
+        return pooled_median_f0(wavs, SR)
     except Exception:
         logger.warning("could not measure the new voice's pitch", exc_info=True)
         return None
-    return median_f0(wav, SR)

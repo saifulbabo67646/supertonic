@@ -78,14 +78,17 @@ and with a looser ±22% the 156 Hz female voice F5 would have competed and won.
 
 ### The pitch check
 
-After the build the new voice speaks one sentence and its median pitch is measured the
-same way. The report keeps both pitches and whether they match (`pitch_reference_hz`,
-`pitch_voice_hz` and `pitch_match`). They match within about ±22% (a log-distance of 0.2,
-`PITCH_TOLERANCE`), looser than the ±12% for the start voice because the search may move
-the pitch a little. When they do not match, the
-Studio's finished build says "This voice sounds higher (or lower) than your recording. Try
-making it again with a longer, clearer recording." A short, noisy or whispered recording
-is the usual cause: there is too little clear voice to measure or to copy.
+After the build the new voice speaks the first four sentences (all of them when there are
+fewer) and one median pitch is taken over their voiced frames together, since one sentence
+is too noisy to judge by (a build of a 130 Hz recording measured 99 Hz on its first
+sentence, 129 and 110 Hz on two others). The start-voice scan above stays at one sentence
+per built-in voice, to keep it cheap. The report keeps both pitches and whether they
+match (`pitch_reference_hz`, `pitch_voice_hz` and `pitch_match`). They match within about
+±22% (a log-distance of 0.2, `PITCH_TOLERANCE`), looser than the ±12% for the start voice
+because the search may move the pitch a little. When they do not match, the Studio's
+finished build says "This voice sounds higher (or lower) than your recording. Try making
+it again with a longer, clearer recording." A short, noisy or whispered recording is the
+usual cause: there is too little clear voice to measure or to copy.
 
 ## Requirements
 

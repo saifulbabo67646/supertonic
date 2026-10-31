@@ -25,7 +25,11 @@ from supertonic_server.builder.extract.accurate import extract as accurate_extra
 from supertonic_server.builder.extract.accurate.config import AccurateConfig  # noqa: E402
 from supertonic_server.builder.extract.base import NothingToSaveError  # noqa: E402
 from supertonic_server.builder.extract.common.duration import duration_inversion  # noqa: E402
-from supertonic_server.builder.extract.common.finish import finish_with_duration  # noqa: E402
+from supertonic_server.builder.extract.common.finish import (  # noqa: E402
+    PITCH_PROMPTS,
+    _voice_f0,
+    finish_with_duration,
+)
 from supertonic_server.builder.extract.common.preset_scan import nearest_preset  # noqa: E402
 from supertonic_server.builder.extract.duration_config import DurationConfig  # noqa: E402
 from supertonic_server.builder.extract.fast import extract as fast_extract  # noqa: E402
@@ -445,3 +449,41 @@ def test_finish_reports_the_pitch_of_the_final_style(tmp_path: Path) -> None:
     assert near["pitch_match"] is True
     unknown = _finish(_wav(tmp_path), StopAfter(10**6))
     assert unknown["pitch_reference_hz"] is None and unknown["pitch_match"] is None
+
+
+class ToneTTS:
+    """Speaks each prompt as a harmonic tone at the prompt's own ``f0``; counts the calls."""
+
+    def __init__(self, fail_on: float | None = None) -> None:
+        self.spoken: list[float] = []
+        self.fail_on = fail_on
+
+    def synthesize_at_own_length(self, prompt: Any, ttl: Any, dp: Any) -> np.ndarray:
+        if prompt.f0 == self.fail_on:
+            raise RuntimeError("CUDA out of memory")
+        self.spoken.append(prompt.f0)
+        t = np.arange(SR) / SR
+        return 0.3 * sum(np.sin(2 * np.pi * k * prompt.f0 * t) / k for k in range(1, 6))
+
+
+def _tone_prompts(*f0s: float) -> list[Any]:
+    return [SimpleNamespace(f0=f0) for f0 in f0s]
+
+
+def test_voice_pitch_pools_the_first_prompts() -> None:
+    tts = ToneTTS()
+    style = torch.zeros(1, 50, 256), _dp_start()
+    found = _voice_f0(_tone_prompts(100.0, 130.0, 130.0, 135.0, 300.0), *style, tts)  # type: ignore[arg-type]
+    assert found == pytest.approx(130.0, rel=0.03)  # prompts[0] alone would say 100 Hz
+    assert tts.spoken == [100.0, 130.0, 130.0, 135.0]  # only the first PITCH_PROMPTS
+    assert PITCH_PROMPTS == 4
+    fewer = _voice_f0(_tone_prompts(100.0, 130.0), *style, ToneTTS())  # type: ignore[arg-type]
+    assert fewer is not None and 100.0 <= fewer <= 130.0
+    assert _voice_f0([], *style, ToneTTS()) is None  # type: ignore[arg-type]
+
+
+def test_voice_pitch_failure_is_none(caplog: pytest.LogCaptureFixture) -> None:
+    style = torch.zeros(1, 50, 256), _dp_start()
+    tts = ToneTTS(fail_on=130.0)
+    assert _voice_f0(_tone_prompts(100.0, 130.0, 135.0), *style, tts) is None  # type: ignore[arg-type]
+    assert "could not measure" in caplog.text
