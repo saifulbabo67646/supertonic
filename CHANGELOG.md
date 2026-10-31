@@ -76,6 +76,8 @@ All notable changes to this project are documented here. The format is based on
   only shows during the timbre stage. The speed hint says the slider starts at 1.05.
   "Try a sample" keeps text you already typed. A full queue (`server_busy`) says
   Supertonic is busy, and other messages that merely contain "busy" are shown as they are.
+- MCP `preview_voice` names its file after the voice's id, so asking for `"Mia"` saves
+  `preview-F1-en-<time>.wav`, the same as `"F1"`.
 - The docs say where the model is stored: `~/.cache/supertonic3`.
 - `scripts/serve.sh` and `scripts/serve.ps1` no longer uninstall the voice builder extra
   (`uv sync --inexact`).

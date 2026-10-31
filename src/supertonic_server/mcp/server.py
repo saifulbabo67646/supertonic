@@ -186,10 +186,10 @@ def build_server(client: SupertonicClient, output_dir: Path) -> MCPServer:
         Returns ``{path}``, the absolute path of a WAV file saved on this machine.
         """
         try:
-            audio = await client.preview(voice, language)
+            audio, voice_id = await client.preview(voice, language)
         except SupertonicApiError as exc:
             raise fail(exc) from exc
-        name = f"preview-{voice}-{language}"
+        name = f"preview-{voice_id}-{language}"
         path = _target(output_dir, name, "wav", None)
         return {"path": _save(path, audio)}
 

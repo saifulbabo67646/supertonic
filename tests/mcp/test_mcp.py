@@ -131,7 +131,8 @@ async def test_voice_by_preset_name(mcp: MCPServer) -> None:
     assert out["voice"] == "F1" and Path(out["path"]).name.startswith("F1-")
     stamped = await call(mcp, "speak", text="Hello.", voice="Hugo", timestamps=True)
     assert stamped["voice"] == "M1"
-    assert head((await call(mcp, "preview_voice", voice="MIA"))["path"]) == b"RIFF"
+    preview = Path((await call(mcp, "preview_voice", voice="MIA"))["path"])
+    assert head(str(preview)) == b"RIFF" and preview.name.startswith("preview-F1-en")
     voices = {v["id"]: v for v in await call(mcp, "list_voices")}
     assert voices["F1"]["name"] == "Mia" and voices["F1"]["description"]
 
@@ -182,7 +183,7 @@ async def test_client_quotes_voice_in_preview_path(voice: str) -> None:
     c = SupertonicClient(
         httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="http://x")
     )
-    assert await c.preview(voice, "en") == b"RIFF"
+    assert await c.preview(voice, "en") == (b"RIFF", voice)  # no X-Voice-Id: the reference
     path = seen[0].raw_path.decode().split("?")[0]
     assert path.startswith("/v1/voices/") and path.endswith("/preview")
     assert path.count("/") == 4 and seen[0].params["language"] == "en"

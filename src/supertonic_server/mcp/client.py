@@ -120,12 +120,15 @@ class SupertonicClient:
         data: dict[str, Any] = (await self._request("POST", "/v1/tts/timestamps", json=body)).json()
         return data
 
-    async def preview(self, voice: str, language: str) -> bytes:
-        """Return the WAV bytes of ``GET /v1/voices/{id}/preview``."""
+    async def preview(self, voice: str, language: str) -> tuple[bytes, str]:
+        """Return the WAV bytes of ``GET /v1/voices/{id}/preview`` and the voice's id.
+
+        The id comes from ``X-Voice-Id``, so a name such as ``"Mia"`` comes back as ``F1``.
+        """
         resp = await self._request(
             "GET", f"/v1/voices/{_segment(voice)}/preview", params={"language": language}
         )
-        return resp.content
+        return resp.content, resp.headers.get("X-Voice-Id", voice)
 
     async def build(
         self,
