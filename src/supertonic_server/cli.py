@@ -1,4 +1,4 @@
-"""Command-line entry point: ``supertonic-server serve`` and ``supertonic-server launch``."""
+"""Command-line entry point: ``supertonic-server serve``, ``launch`` and ``check``."""
 
 from __future__ import annotations
 
@@ -6,11 +6,12 @@ import argparse
 import logging
 import sys
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Any
 
 from pydantic import ValidationError
 
-from supertonic_server import launch
+from supertonic_server import launch, smoke
 from supertonic_server.core.config import ConfigError, Settings
 from supertonic_server.core.logs import RedactApiKeyFilter
 
@@ -106,7 +107,25 @@ def main(argv: Sequence[str] | None = None) -> None:
     )
     start.add_argument("--port", type=int, help="preferred port (default: SUPERTONIC_PORT or 8787)")
     start.add_argument("--no-open", action="store_true", help="do not open the browser")
+    probe = sub.add_parser(
+        "check", help="smoke-test a running server: health, a speech file and word timestamps"
+    )
+    probe.add_argument(
+        "--url", help="server address (default: http://127.0.0.1:SUPERTONIC_PORT, port 8787)"
+    )
+    probe.add_argument("--api-key", help="the server's API key (default: SUPERTONIC_API_KEY)")
+    probe.add_argument(
+        "--out",
+        type=Path,
+        default=Path("supertonic-output") / "smoke-test.mp3",
+        help="where to save the speech file (default: supertonic-output/smoke-test.mp3)",
+    )
     args = parser.parse_args(argv)
+
+    if args.command == "check":
+        settings = _settings({})
+        url = args.url or f"http://{launch.browser_host(settings.host)}:{settings.port}"
+        raise SystemExit(smoke.check(url, args.api_key or settings.api_key, args.out))
 
     if args.command == "launch":
         settings = _settings({"port": args.port} if args.port is not None else {})

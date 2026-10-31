@@ -18,6 +18,8 @@ htmlcov/
 .env
 data/
 supertonic-output/
+supertonic-server*.log
+supertonic-server.pid
 
 # Editors and OS files
 .idea/
