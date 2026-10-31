@@ -40,6 +40,8 @@ if (-not (Test-Uv)) {
 }
 
 # 2. Dependencies. With an NVIDIA GPU, also the voice builder (PyTorch with CUDA, ~3 GB).
+# A new install uses Python 3.13, the newest version the project is tested on.
+if (-not (Test-Path .venv) -and -not $env:UV_PYTHON) { $env:UV_PYTHON = '3.13' }
 $wantBuilder = $false
 if ($env:SUPERTONIC_SKIP_BUILDER -ne '1' -and (Get-Command nvidia-smi -ErrorAction SilentlyContinue)) {
     nvidia-smi *> $null
@@ -57,6 +59,16 @@ if ($wantBuilder) {
         Say ''
         uv sync
         if ($LASTEXITCODE -ne 0) { Fail "installing Supertonic's dependencies failed. Check your internet connection and try again." }
+    } else {
+        # The first import of PyTorch after an install is slow; doing it now keeps the
+        # server's own builder check (which has a time limit) fast.
+        Say 'Checking the voice builder (the first time this can take a minute).'
+        $probe = uv run --no-sync python -m supertonic_server.builder.worker --self-test 2> $null |
+            Select-Object -Last 1
+        if (-not ("$probe" -match '"cuda": true')) {
+            Say 'Note: the voice builder check did not pass; building new voices may be unavailable.'
+            Say 'See docs\troubleshooting.md, "The voice builder".'
+        }
     }
 } else {
     Say 'Installing Supertonic (the first time this takes a minute or two).'
