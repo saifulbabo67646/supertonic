@@ -44,13 +44,13 @@ Notes:
 - The Finish now run above skipped the rhythm matching (11.1 min). Finish now has since
   been changed to end only the timbre stage: the rhythm matching still runs, which adds
   2 to 5 minutes and gives the early voice the speaker's own pace.
-- The nearest preset for watson in the `accurate` (ECAPA) scan was `F5`; in the R1 spike the
-  WavLM scan picked `M5`. The scan only chooses the starting point.
+- The nearest preset for watson in the `accurate` (ECAPA) scan was `F5`; in the upstream-tools
+  run below the WavLM scan picked `M5`. The scan only chooses the starting point.
 - `similarity` is the same ECAPA score `accurate` optimises, so it is optimistic; listening
   decides. The voices then synthesised normally on the Mac's CPU in English, Japanese and
   Korean.
 
-## R1 spike (2026-10-18/19)
+## Upstream tools before integration (2026-10-18/19)
 
 Before the builder was written, both upstream tools were run unchanged on the same laptop
 (CUDA 12.4 driver, torch 2.9.1+cu126). Speaker similarity = ECAPA cosine between the
@@ -76,5 +76,5 @@ reference recording and Supertonic output (2 English sentences, 1 Japanese sente
   decodes with soundfile instead) and SpeechBrain's symlink fetch fails without developer
   mode (the builder copies instead).
 
-The builder's `fast` runs took longer than the spike (13 min vs 5 to 9 min) because it also
+The builder's `fast` runs took longer than the upstream-tools run (13 min vs 5 to 9 min) because it also
 inverts the rhythm (about 2.3 min) and its timbre stage ran more steps before converging.

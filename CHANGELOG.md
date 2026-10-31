@@ -23,17 +23,36 @@ All notable changes to this project are documented here. The format is based on
   8799, start, open the browser; `--no-open`) and `serve --open`. The Connect page says
   how to stop the server; `docs/troubleshooting.md` covers the first start, macOS and
   Windows warnings, ports, the builder install and where data lives.
+- `supertonic-server check`: a smoke test of a running server (health, a speech file and
+  word timestamps) that prints `PASS` or the reason it failed, the same on every system.
+- Setup by coding agents: `AGENTS.md` (prerequisites, exact commands for macOS, Windows
+  and Linux, running in the background, verification, the voice builder, MCP, common
+  failures and a definition of done), `CLAUDE.md` importing it, and `docs/agent-setup.md`
+  with one copy-paste prompt and variations (GPU builder, forwarding from a Mac, MCP,
+  replacing a hosted TTS provider in an app).
+- `docs/getting-started.md`, a beginner's guide: download, double-click, a tour of the
+  Studio, making your own voice, updating and uninstalling, and common questions.
 - Community files for the public repository: a full Contributor Covenant 2.1, a security
   policy with supported versions and private reporting, GitHub issue forms, a pull request
   template, a docs index (`docs/README.md`), CodeQL scanning and weekly Dependabot updates.
 
 ### Changed
 
+- The README is now a short product page with three ways to start (double-click, coding
+  agent, developer); the detail moved to new pages `docs/configuration.md`, `docs/mcp.md`
+  and `docs/remote-access.md`, and the realtime WebSocket events to `docs/api.md`.
+  `docs/integrations.md` covers OpenAI-style apps and moving from hosted voice services.
 - Package metadata: SPDX licence expression, authors, keywords, classifiers and project
   links; the version is defined once, in `supertonic_server.__version__`.
 - CI runs lint and type checks once, the tests on Linux, macOS and Windows with Python
   3.11 to 3.13, and a package build check, on current GitHub Actions versions.
 - Internal: the voice builder's job runner moved to its own module (no behaviour change).
+
+### Fixed
+
+- `scripts/serve.sh` and `scripts/serve.ps1` no longer uninstall the voice builder extra
+  (`uv sync --inexact`).
+- CONTRIBUTING's start command (`uv run supertonic-server serve`).
 
 ## [0.1.0] - 2026-10-31
 

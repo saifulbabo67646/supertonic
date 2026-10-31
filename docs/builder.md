@@ -28,8 +28,8 @@ adjusts the rhythm array so the new voice speaks at a similar rate.
 The judge compares *speakers*, not words, and the training sentences rotate, so what is
 learned is the voice rather than any particular sentence. The style arrays are shared by
 all 31 languages, so a voice built from English speech also speaks Japanese, Korean and the
-rest, usually with the same character (the judge scores in the R1 spike were as high for
-Japanese as for English; see [benchmarks-builder.md](benchmarks-builder.md)).
+rest, usually with the same character (in the first measurements the judge scores were as high
+for Japanese as for English; see [benchmarks-builder.md](benchmarks-builder.md)).
 
 The two build methods differ in the judge they use:
 
@@ -213,7 +213,7 @@ sentences.
 
 ## Good reference audio
 
-- 10 to 30 seconds of one speaker, no music or other voices; 1 to 3 files, any common
+- 30 to 60 seconds of one speaker, no music or other voices; 1 to 3 files, any common
   format, at most 25 MB in total. Speech must total 3 to 60 s after silence is trimmed.
 - Close microphone, little room echo, natural reading voice. The voice copies what it
   hears, including noise and room colour.

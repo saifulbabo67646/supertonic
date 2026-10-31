@@ -3,7 +3,40 @@
 Generic recipes for two common ways to use Supertonic Server. Replace the base URL and key
 with your own (`SUPERTONIC_BASE_URL`, `SUPERTONIC_API_KEY`).
 
+## Any app that speaks OpenAI text-to-speech
+
+Point the OpenAI SDK (or any client of OpenAI's `/v1/audio/speech`) at the server. The key
+is only checked if the server has one.
+
+```python
+from openai import OpenAI
+
+client = OpenAI(base_url="http://127.0.0.1:8787/v1", api_key="not-needed")
+with client.audio.speech.with_streaming_response.create(
+    model="supertonic-3", voice="Mia", input="Hello from the OpenAI SDK.", response_format="mp3"
+) as response:
+    response.stream_to_file("hello.mp3")
+```
+
+Coming from a hosted voice service such as ElevenLabs or Cartesia: there is no
+drop-in endpoint for their APIs. Replace their speech call with `POST /v1/audio/speech`
+(whole files or a sentence-by-sentence stream) or `POST /v1/tts/timestamps` (audio plus
+word timings), and their streaming WebSocket with the realtime WebSocket below, which has
+the same shape of features: text streamed in, audio per sentence out, several contexts per
+connection and barge-in. Pick a voice by name from [voices.md](voices.md), or build one
+from a recording of the voice you used ([builder.md](builder.md)).
+
 ## A live voice agent (LiveKit or similar)
+
+LiveKit Agents' `openai.TTS` plugin works as is (`model` and `voice` are passed through):
+
+```python
+from livekit.plugins import openai
+
+tts = openai.TTS(
+    base_url="http://127.0.0.1:8787/v1", api_key="not-needed", model="supertonic-3", voice="F1"
+)
+```
 
 Goal: speak an LLM's reply with low time-to-first-audio and stop instantly when the user
 interrupts.
@@ -33,7 +66,7 @@ interrupts.
 - **Sample rate.** Ask for what your pipeline uses (`sample_rate=16000` or `24000`) so no
   client-side resampling is needed.
 - **Deployment.** Run the server next to the agent on loopback. If the agent is remote,
-  use an API key and a tunnel; see the README.
+  use an API key and a tunnel; see [remote access](remote-access.md).
 
 ## A video narration pipeline that needs word timing
 

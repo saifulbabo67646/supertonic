@@ -273,8 +273,41 @@ the builder's code unchanged.
 
 ## Realtime WebSocket
 
-`ws://127.0.0.1:8787/v1/audio/speech/websocket`, see the event table in the
-[README](../README.md#realtime-websocket).
+Connect to `ws://127.0.0.1:8787/v1/audio/speech/websocket?voice=F1&language=en&speed=1.05&sample_rate=24000`.
+Audio is base64 PCM16 mono at `sample_rate` (16000, 22050, 24000 or 44100). Every client
+event may carry a `context_id` (default `default`); contexts are independent utterances on
+one socket. Send `Authorization: Bearer <key>` when your client can set headers; `?api_key=`
+exists for browsers but query strings tend to end up in logs, so prefer the header.
+
+Client to server:
+
+| Event | Fields | Effect |
+|---|---|---|
+| `input_text_buffer.append` | `text`, `context_id` | Adds text. Each finished sentence is synthesised and sent immediately; an unfinished one is flushed at `max_partial_length` (default 250) characters. |
+| `input_text_buffer.commit` | `context_id` | Flushes the remaining text and ends the item (`audio_output.done`). Committing a context with no pending item sends nothing. |
+| `input_text_buffer.clear` | `context_id` | Drops buffered text that was not yet cut into a sentence. |
+| `context.cancel` | `context_id` | Barge-in: stops the context, drops unsent audio, replies `context.cancelled`. |
+| `tts_session.updated` | `session: {voice, language, speed}`, optional `context_id` | Changes voice, language or speed of one context, or of all if `context_id` is omitted. |
+
+Server to client:
+
+| Event | Fields |
+|---|---|
+| `session.created` | `session` (`id`, `voice`, `language`, `sample_rate`, `speed`, ...), sent once after connecting. |
+| `session.updated` | `context_id` (null if all), `session`. |
+| `conversation.item.input_text.received` | `context_id`, `item_id`, `text`: acknowledges an append. |
+| `conversation.item.audio_output.delta` | `context_id`, `item_id`, `delta` (base64 PCM16), one per sentence, in order. |
+| `conversation.item.audio_output.done` | `context_id`, `item_id`: after the last delta of an item. |
+| `context.cancelled` | `context_id`: no further audio for the cancelled work follows. |
+| `conversation.item.tts.failed` | `context_id`, optional `item_id`, `error` object (`message`, `type`, `code`, `param`). |
+
+Limits: at most 32 live contexts per connection (a context with text buffered, queued or
+being synthesised; idle contexts are forgotten, oldest first, when room is needed, and their
+per-context settings revert to the session's) and 4 synthesising at once (others wait their
+turn); at most 100 000 characters waiting for synthesis per connection (more gives
+`input_too_long`); if the client stops reading and 4 MB of events are queued, synthesis
+pauses until it catches up. Authentication or parameter errors arrive as a
+`conversation.item.tts.failed` event followed by close code 1008.
 
 Query parameters: `voice` (default `SUPERTONIC_DEFAULT_VOICE`), `language` (`en`), `speed`
 (1.05), `sample_rate` (24000; 16000, 22050, 24000 or 44100), `max_partial_length` (250

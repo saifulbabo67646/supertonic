@@ -15,12 +15,15 @@ git clone https://github.com/saifulbabo67646/supertonic.git
 cd supertonic
 uv sync                       # creates .venv with runtime and dev dependencies
 uv run pre-commit install     # runs ruff and mypy on every commit
-uv run supertonic-server      # http://127.0.0.1:8787 (downloads the model on first run)
+uv run supertonic-server serve   # http://127.0.0.1:8787 (downloads the model on first run)
 ```
 
 The voice builder needs an NVIDIA GPU and the optional extra: `uv sync --extra builder`
 (see [docs/builder.md](docs/builder.md)). Everything else, including the builder tests,
 runs without it.
+
+Coding agents: [AGENTS.md](AGENTS.md) has the same steps as a checklist, plus how to run
+the server in the background and smoke-test it (`uv run supertonic-server check`).
 
 ## Tests and checks
 
