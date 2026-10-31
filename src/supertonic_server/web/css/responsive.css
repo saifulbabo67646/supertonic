@@ -1,0 +1,79 @@
+/* Key dialog, small-screen and reduced-motion overrides. Loaded last. */
+
+/* Key dialog */
+
+dialog {
+  border: 1px solid var(--line);
+  border-radius: var(--r-panel);
+  background: var(--surface);
+  color: var(--ink);
+  padding: 24px;
+  width: min(440px, calc(100vw - 32px));
+  box-shadow: var(--shadow);
+}
+dialog::backdrop {
+  background: rgba(13, 18, 32, 0.55);
+}
+.key-form {
+  display: grid;
+  gap: 12px;
+}
+.key-form p {
+  color: var(--muted);
+  font-size: 0.9375rem;
+}
+.key-form .field-error {
+  color: var(--danger);
+}
+.key-form .field-error:empty {
+  display: none;
+}
+.notice {
+  padding: 16px;
+}
+
+/* Small screens */
+
+@media (max-width: 720px) {
+  .masthead {
+    grid-template-columns: 1fr auto;
+    padding-bottom: 0;
+  }
+  .tabs {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-self: stretch;
+    margin: 0 -8px;
+  }
+  .tabs a {
+    flex: 1;
+    text-align: center;
+  }
+  .tabs a[aria-current="page"]::after {
+    bottom: 0;
+  }
+  .server-status {
+    font-size: 0.8125rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 52vw;
+  }
+  main {
+    padding-top: 24px;
+  }
+  textarea.script {
+    min-height: 220px;
+    font-size: 1.125rem;
+    padding: 16px;
+  }
+  .panel {
+    padding: 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
+}

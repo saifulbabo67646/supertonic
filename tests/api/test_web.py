@@ -73,3 +73,16 @@ def test_web_never_parses_html_or_opens_window_dialogs() -> None:
     for module in sorted((WEB / "js").glob("*.js")):
         text = module.read_text(encoding="utf-8")
         assert not banned.search(text), f"{module.name}: {banned.search(text)}"
+
+
+async def test_web_stylesheets_are_served(client: httpx.AsyncClient) -> None:
+    """Every stylesheet the page links is served as CSS, and every CSS file is linked."""
+    page = (await client.get("/")).text
+    linked = re.findall(r'<link rel="stylesheet" href="/([\w/.-]+\.css)"', page)
+    assert linked[0] == "styles.css"
+    for path in linked:
+        r = await client.get(f"/{path}")
+        assert r.status_code == 200, path
+        assert r.headers["content-type"].startswith("text/css")
+    on_disk = {"styles.css"} | {f"css/{p.name}" for p in (WEB / "css").glob("*.css")}
+    assert set(linked) == on_disk
