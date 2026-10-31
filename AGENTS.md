@@ -144,8 +144,9 @@ Linux) do all of the above in a window and open the Studio; closing the window s
 server. In a terminal the same is `uv run supertonic-server launch`: if a server is
 already running it prints its URL, opens it and exits; otherwise it picks a free port from
 8787 to 8799, starts, and opens the browser once the server is ready (`--no-open` to skip
-that; `--port <port>` checks and uses only that port). A server it starts runs in the foreground until stopped, so an agent should only use
-the launchers when the user wants that window.
+that; `--port <port>` checks and uses only that port). A server it starts runs in the
+foreground until stopped, so an agent should only use the launchers when the user wants
+that window.
 
 ## 5. Verify
 
