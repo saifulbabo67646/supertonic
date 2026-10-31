@@ -33,7 +33,7 @@ computer.
 
 | What you see | What to do |
 |---|---|
-| "Start Supertonic.command cannot be opened because it is from an unidentified developer" (or "Apple could not verify...") | Right-click (or Control-click) the file, choose **Open**, then **Open** again. macOS remembers this, so you only do it once. On recent macOS versions you may instead need **System Settings > Privacy & Security > Open Anyway**. |
+| "Start Supertonic.command cannot be opened because it is from an unidentified developer" (or "Apple could not verify...") | Open **System Settings > Privacy & Security**, scroll down to **Security**, click **Open Anyway** next to the message about the file, confirm, then double-click it again. macOS remembers this, so you only do it once. On older macOS versions (before macOS 15 Sequoia), right-clicking the file and choosing **Open** also works. |
 | "You do not have permission to open the application" or nothing happens | The file lost its "executable" mark (this can happen with some unzip tools). Open the Terminal app, type `chmod +x ` (with a space), drag the file into the Terminal window, and press Enter. |
 | Apple Silicon or Intel? | Both work; nothing to choose. |
 

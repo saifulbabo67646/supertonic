@@ -26,16 +26,18 @@ Open the `supertonic-main` folder and double-click the start file for your compu
 
 Double-click **Start Supertonic.command**.
 
-The first time, macOS may say it "cannot be opened because it is from an unidentified
-developer" or that Apple "could not verify" it. That is normal for files downloaded from
-the internet that are not from the App Store:
+The first time, macOS may block it with a message that Apple "could not verify" it or
+that it is "from an unidentified developer". That is normal for files downloaded from the
+internet that are not from the App Store. To allow it:
 
-1. Right-click (or Control-click) **Start Supertonic.command** and choose **Open**.
-2. Click **Open** again in the message.
+1. Click **Done** (or **OK**) in the message.
+2. Open **System Settings > Privacy & Security** and scroll down to **Security**.
+3. Next to the message about "Start Supertonic.command", click **Open Anyway** and confirm
+   (with your password or Touch ID if asked).
+4. Double-click **Start Supertonic.command** again, and click **Open** if asked.
 
-macOS remembers this, so you only do it once. On recent macOS versions you may need to go
-to **System Settings > Privacy & Security** instead, and click **Open Anyway** next to the
-message about Supertonic.
+macOS remembers this, so you only do it once. On older macOS versions (before macOS 15
+Sequoia), right-clicking the file and choosing **Open** also works.
 
 ### Windows
 
@@ -44,8 +46,8 @@ Double-click **Start Supertonic.bat**.
 The first time, Windows may show "Windows protected your PC". Click **More info**, then
 **Run anyway**. Windows shows this for downloaded files that are not signed.
 
-If a firewall message about Python appears, you can click **Cancel**: Supertonic only
-talks to your own computer.
+Supertonic only talks to your own computer, so it never needs to be allowed through a
+firewall.
 
 ### Linux
 

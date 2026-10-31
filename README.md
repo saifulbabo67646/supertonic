@@ -36,7 +36,7 @@ friendly web Studio, an OpenAI-compatible API and tools for AI agents.
 
 | Computer | Double-click | The first time |
 |---|---|---|
-| Mac | `Start Supertonic.command` | right-click it, choose **Open**, then **Open** |
+| Mac | `Start Supertonic.command` | if macOS blocks it: **System Settings > Privacy & Security > Open Anyway**, then double-click again |
 | Windows | `Start Supertonic.bat` | **More info**, then **Run anyway** |
 | Linux | `start-supertonic.sh` | if it opens as text, run `./start-supertonic.sh` in a terminal |
 

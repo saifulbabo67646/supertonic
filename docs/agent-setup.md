@@ -77,7 +77,7 @@ that is simple. Run the app's tests and show me the diff before committing anyth
 
 ## What the agent will do
 
-Roughly: install uv if needed, run `uv sync`, start `uv run supertonic-server serve` in the
+Roughly: install uv if needed, run `uv sync --inexact`, start `uv run supertonic-server serve` in the
 background with a log file, wait for `GET /v1/health`, run the smoke test (a short speech
 file and word timestamps), open <http://127.0.0.1:8787/> and report back. The first start
 downloads about 750 MB (the dependencies and the voice model), so it can take a few

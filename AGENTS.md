@@ -61,10 +61,11 @@ Windows: `curl.exe -s http://127.0.0.1:8787/v1/health`.
 ## 4. Install and start the server
 
 Install the dependencies (creates `.venv` in the repository; takes a minute or two the first
-time):
+time). `--inexact` keeps the voice builder extra if this machine already has it (step 7); a
+plain `uv sync` would remove it.
 
 ```bash
-uv sync
+uv sync --inexact
 ```
 
 Start the server in the background with its output in a log file, so your shell is not
@@ -89,14 +90,27 @@ On Windows the server's messages go to `supertonic-server.err.log` and the reque
 pid files are ignored by Git.
 
 Wait until it answers. The first start downloads the model, which can take several minutes
-on a slow connection; later starts take a few seconds.
+on a slow connection; later starts take a few seconds. These loops wait up to 10 minutes
+and stop early, showing the end of the log, if the server process exits.
 
 ```bash
-for i in $(seq 1 120); do curl -sf http://127.0.0.1:8787/v1/health && break; sleep 5; done
+for i in $(seq 1 120); do
+  curl -sf http://127.0.0.1:8787/v1/health && break
+  if ! kill -0 "$(cat supertonic-server.pid)" 2>/dev/null; then
+    echo "The server stopped:"; tail -n 20 supertonic-server.log; break
+  fi
+  sleep 5
+done
 ```
 
 ```powershell
-for ($i = 0; $i -lt 120; $i++) { try { Invoke-RestMethod http://127.0.0.1:8787/v1/health; break } catch { Start-Sleep 5 } }
+for ($i = 0; $i -lt 120; $i++) {
+  try { Invoke-RestMethod http://127.0.0.1:8787/v1/health; break } catch { }
+  if (-not (Get-Process -Id (Get-Content supertonic-server.pid) -ErrorAction SilentlyContinue)) {
+    "The server stopped:"; Get-Content supertonic-server.err.log -Tail 20; break
+  }
+  Start-Sleep 5
+}
 ```
 
 If it does not come up, read the end of the log file and look for the message in
@@ -183,8 +197,8 @@ scripts/setup-builder.sh                                            # Linux
 
 The script installs the `builder` extra, checks CUDA, downloads the models and prints `.env`
 lines. Start the server again as in step 4. `GET /v1/health` then shows `"builder":"local"`.
-From now on install with `uv sync --extra builder`: a plain `uv sync` removes the builder
-again.
+From now on install with `uv sync --extra builder` or `uv sync --inexact`: a plain
+`uv sync` removes the builder again.
 
 **A Mac (or any machine without a GPU) can forward builds** to such a machine. On the
 forwarding machine put this in `.env` and restart:
