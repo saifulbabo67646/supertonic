@@ -156,6 +156,13 @@ def test_session_update_invalid_keeps_socket(ws: WebSocketTestSession) -> None:
     assert recv_json(ws)["session"]["voice"] == "F1"
 
 
+def test_voice_by_preset_name(client_ws_factory: WsFactory) -> None:
+    with client_ws_factory("?voice=hugo") as ws:
+        assert recv_json(ws)["session"]["voice"] == "M1"
+        ws.send_json({"type": "tts_session.updated", "session": {"voice": "Mia"}})
+        assert recv_json(ws)["session"]["voice"] == "F1"
+
+
 def test_bad_voice_rejected(client_ws_factory: WsFactory) -> None:
     with client_ws_factory("?voice=nobody") as ws:
         m = ws.receive_json()

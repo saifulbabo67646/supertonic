@@ -17,13 +17,13 @@ from typing import Any
 from supertonic.core import Style
 from supertonic.loader import load_voice_style_from_json_file
 
-from supertonic_server.core.errors import ApiError
+from supertonic_server.core.errors import ApiError, voice_name_taken
 from supertonic_server.voices.models import Voice
+from supertonic_server.voices.presets import PRESET_IDS, PRESETS, is_reserved, preset_id_for_name
 from supertonic_server.voices.validation import validate_style
 
 logger = logging.getLogger(__name__)
 
-PRESET_IDS = frozenset({*(f"F{i}" for i in range(1, 6)), *(f"M{i}" for i in range(1, 6))})
 _PRESET_PREVIEW_DIR = "_presets"
 
 
@@ -57,6 +57,16 @@ def _with_suffix(base: str, n: int) -> str:
     return base[: MAX_SLUG_LENGTH - len(suffix)].rstrip("-") + suffix
 
 
+def check_name_free(name: str) -> None:
+    """Refuse a custom voice name that equals a built-in voice's id or name.
+
+    Raises:
+        ApiError: 409 ``voice_name_taken``.
+    """
+    if is_reserved(name):
+        raise voice_name_taken(name)
+
+
 def _atomic_write(path: Path, payload: dict[str, Any]) -> None:
     """Write JSON to ``path`` via a temp file in the same directory."""
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=path.name, suffix=".tmp")
@@ -87,8 +97,14 @@ class VoiceLibrary:
     def _scan(self) -> None:
         voices: dict[str, Voice] = {}
         for f in sorted(self.presets_dir.glob("*.json")):
-            gender = {"F": "female", "M": "male"}.get(f.stem[:1].upper())
-            voices[f.stem] = Voice(f.stem, f.stem, "preset", gender=gender)
+            preset = PRESETS.get(f.stem)
+            if preset is None:  # a style file this server has no metadata for
+                gender = {"F": "female", "M": "male"}.get(f.stem[:1].upper())
+                voices[f.stem] = Voice(f.stem, f.stem, "preset", gender=gender)
+                continue
+            voices[f.stem] = Voice(
+                f.stem, preset.name, "preset", preset.description, gender=preset.gender
+            )
         for meta in self.custom_dir.glob("*/voice.json"):
             vid = meta.parent.name
             try:
@@ -125,7 +141,15 @@ class VoiceLibrary:
         return v
 
     def resolve(self, ref: str) -> Voice:
-        """Find a voice by id, case-insensitive id, then unique case-insensitive name."""
+        """Find a voice by any reference a user may type.
+
+        Order: exact id, case-insensitive id, built-in voice name (``"Mia"`` is ``F1``),
+        then a unique custom voice name; names are case-insensitive.
+
+        Raises:
+            ApiError: 404 ``voice_not_found``; 400 ``ambiguous_voice`` when several custom
+                voices share the name.
+        """
         voices = self.list()
         for v in voices:
             if v.id == ref:
@@ -134,7 +158,13 @@ class VoiceLibrary:
         for v in voices:
             if v.id.lower() == low:
                 return v
-        named = [v for v in voices if v.name.lower() == low]
+        preset_id = preset_id_for_name(ref)
+        if preset_id is not None:
+            with self._lock:
+                preset = self._voices.get(preset_id)
+            if preset is not None:
+                return preset
+        named = [v for v in voices if v.kind == "custom" and v.name.lower() == low]
         if len(named) == 1:
             return named[0]
         if named:
@@ -182,6 +212,7 @@ class VoiceLibrary:
         ``extra`` (build metadata) is stored as ``voice.json["build"]``.
         """
         validate_style(style)
+        check_name_free(name)
         with self._lock:
             # Folders on disk count too: a leftover folder without valid metadata would
             # otherwise make every import under that name fail.
@@ -215,7 +246,8 @@ class VoiceLibrary:
             return voice
 
     def _custom(self, voice_id: str) -> Voice:
-        voice = self.get(voice_id)
+        preset_id = preset_id_for_name(voice_id)
+        voice = self.get(voice_id if preset_id is None else preset_id)
         if voice.kind == "preset":
             raise ApiError(400, "voice_read_only", f"Preset voice '{voice_id}' is read-only")
         return voice
@@ -232,6 +264,8 @@ class VoiceLibrary:
         with self._lock:
             voice = self._custom(voice_id)
             new = Voice(**{**voice.to_dict()})
+            if name is not None and name.strip().lower() != voice.name.strip().lower():
+                check_name_free(name)
             if name is not None:
                 new.name = name
             if description is not None:

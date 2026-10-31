@@ -126,6 +126,16 @@ async def test_preview_voice(mcp: MCPServer) -> None:
     assert head(out["path"]) == b"RIFF"
 
 
+async def test_voice_by_preset_name(mcp: MCPServer) -> None:
+    out = await call(mcp, "speak", text="Hello.", voice="mia", format="wav")
+    assert out["voice"] == "F1" and Path(out["path"]).name.startswith("F1-")
+    stamped = await call(mcp, "speak", text="Hello.", voice="Hugo", timestamps=True)
+    assert stamped["voice"] == "M1"
+    assert head((await call(mcp, "preview_voice", voice="MIA"))["path"]) == b"RIFF"
+    voices = {v["id"]: v for v in await call(mcp, "list_voices")}
+    assert voices["F1"]["name"] == "Mia" and voices["F1"]["description"]
+
+
 async def test_error_surfaces_code(mcp: MCPServer) -> None:
     with pytest.raises(ToolError, match=r"voice_not_found\)"):
         await call(mcp, "speak", text="Hi.", voice="nobody")

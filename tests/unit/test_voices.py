@@ -31,8 +31,6 @@ def test_import_collision_and_reserved(lib: VoiceLibrary) -> None:
     a = lib.import_style(make_style(), name="Bob")
     b = lib.import_style(make_style(), name="bob")
     assert (a.id, b.id) == ("bob", "bob-2")
-    assert lib.import_style(make_style(), name="f1").id == "f1-2"
-    assert lib.import_style(make_style(), name="F5").id == "f5-2"
 
 
 def test_id_match_beats_name_and_ambiguity(lib: VoiceLibrary) -> None:

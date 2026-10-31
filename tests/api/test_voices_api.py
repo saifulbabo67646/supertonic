@@ -145,3 +145,32 @@ async def test_preview_of_voice_deleted_mid_render(
     r = await client.get(f"/v1/voices/{voice_id}/preview")
     assert r.status_code == 404 and r.json()["error"]["code"] == "voice_not_found"
     assert not (lib.custom_dir / voice_id).exists()
+
+
+async def test_presets_listed_with_names(client: AsyncClient) -> None:
+    data = (await client.get("/v1/voices?kind=preset")).json()["data"]
+    f1 = next(v for v in data if v["id"] == "F1")
+    assert f1["name"] == "Mia" and f1["description"].startswith("Higher-pitched female voice")
+    custom = (
+        await client.post("/v1/voices/import", json={"style": make_style(), "name": "Narrator"})
+    ).json()
+    assert set(f1) == set(custom)  # one shape for presets and custom voices
+
+
+async def test_lookup_by_preset_name(client: AsyncClient) -> None:
+    assert (await client.get("/v1/voices/mia")).json()["id"] == "F1"
+    assert (await client.get("/v1/voices/HUGO/style")).status_code == 200
+    r = await client.get("/v1/voices/Mia/preview")
+    assert r.status_code == 200 and r.content[:4] == b"RIFF" and r.headers["x-voice-id"] == "F1"
+    assert (await client.get("/v1/voices/F1/preview")).content == r.content  # one cache entry
+
+
+async def test_custom_voice_cannot_take_a_preset_name(client: AsyncClient) -> None:
+    r = await client.post("/v1/voices/import", json={"style": make_style(), "name": "mia"})
+    err = r.json()["error"]
+    assert r.status_code == 409 and err["code"] == "voice_name_taken" and err["param"] == "name"
+    vid = (
+        await client.post("/v1/voices/import", json={"style": make_style(), "name": "Narrator"})
+    ).json()["id"]
+    r = await client.patch(f"/v1/voices/{vid}", json={"name": "M1"})
+    assert r.status_code == 409 and r.json()["error"]["code"] == "voice_name_taken"

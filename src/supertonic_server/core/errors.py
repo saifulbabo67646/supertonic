@@ -37,6 +37,19 @@ def error_body(code: str, message: str, param: str | None, type_: str) -> dict[s
     return {"error": {"message": message, "type": type_, "code": code, "param": param}}
 
 
+# -- voice library errors ---------------------------------------------------------------------
+
+
+def voice_name_taken(name: str) -> ApiError:
+    """409: a custom voice may not use a built-in voice's id or name."""
+    return ApiError(
+        409,
+        "voice_name_taken",
+        f"'{name.strip()}' is already used by a built-in voice; choose another name",
+        param="name",
+    )
+
+
 # -- voice builder errors (shared by the local JobManager and the RemoteBuilder) -------------
 
 

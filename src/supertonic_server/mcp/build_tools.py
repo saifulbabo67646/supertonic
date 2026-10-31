@@ -66,7 +66,8 @@ def register_build_tools(server: MCPServer, client: SupertonicClient) -> None:
         Args:
             audio_paths: Paths of 1 to 3 audio files on this machine (3 to 60 s of clean
                 speech in total, up to 25 MB).
-            name: Display name of the new voice.
+            name: Display name of the new voice; not a built-in voice's name or id (``"Mia"``,
+                ``"F1"``, ...).
             source_note: Whose voice this is and where the audio comes from.
             consent: True only if the speaker agreed to their voice being cloned.
             method: ``"accurate"`` (default) or ``"fast"``.

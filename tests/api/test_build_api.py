@@ -121,6 +121,13 @@ async def test_invalid_method(bclient: httpx.AsyncClient) -> None:
     assert r.status_code == 400 and err["code"] == "invalid_request" and err["param"] == "method"
 
 
+@pytest.mark.parametrize("name", ["Mia", "f1"])
+async def test_build_with_preset_name_rejected(bclient: httpx.AsyncClient, name: str) -> None:
+    r = await bclient.post("/v1/voices/build", data={**FORM, "name": name}, files=_files())
+    assert r.status_code == 409 and r.json()["error"]["code"] == "voice_name_taken"
+    assert (await bclient.get("/v1/jobs")).json()["data"] == []
+
+
 async def test_missing_consent(bclient: httpx.AsyncClient) -> None:
     form = {k: v for k, v in FORM.items() if k != "consent"}
     r = await bclient.post("/v1/voices/build", data=form, files=_files())

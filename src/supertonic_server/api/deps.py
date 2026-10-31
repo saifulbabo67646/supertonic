@@ -43,10 +43,10 @@ def get_state(request: Request) -> AppState:
     return state
 
 
-async def preview(state: AppState, voice_id: str, lang: str) -> Path:
-    """Return the cached preview WAV for a voice and language, rendering it once if missing."""
+async def preview(state: AppState, voice_ref: str, lang: str) -> Path:
+    """Return the cached preview WAV for a voice (id or name) and language, rendering it once."""
     get_language(lang)
-    state.library.get(voice_id)
+    voice_id = state.library.resolve(voice_ref).id
     path = state.library.preview_path(voice_id, lang)
     if path.exists():
         return path

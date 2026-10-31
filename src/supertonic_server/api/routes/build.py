@@ -12,6 +12,7 @@ from supertonic_server.api.routes._common import State
 from supertonic_server.builder import Builder, BuildMethod, BuildRequest
 from supertonic_server.core.errors import ApiError, builder_unavailable
 from supertonic_server.core.limits import MAX_FILES, MAX_UPLOAD_BYTES
+from supertonic_server.voices import check_name_free
 
 router = APIRouter(prefix="/v1")
 
@@ -37,6 +38,8 @@ async def build_voice(request: Request, state: State) -> dict[str, Any]:
     """Queue a voice build from 1-3 reference recordings (multipart); returns the job."""
     builder = _builder(state)
     form = await request.form()
+    # Refused here, not after a long build: the import at the end would fail on this name.
+    check_name_free(_field(form, "name"))
     entries = form.getlist("files")
     uploads = [f for f in entries if isinstance(f, UploadFile)]
     if len(uploads) != len(entries):

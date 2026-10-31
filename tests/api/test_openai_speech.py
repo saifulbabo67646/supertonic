@@ -82,6 +82,14 @@ async def test_mp3_default_and_voice_by_name(client: AsyncClient) -> None:
     )
 
 
+@pytest.mark.parametrize("ref", ["Mia", "mia", "MIA"])
+async def test_voice_by_preset_name(client: AsyncClient, ref: str) -> None:
+    r = await client.post(
+        "/v1/audio/speech", json={"input": "Hi.", "voice": ref, "response_format": "pcm"}
+    )
+    assert r.status_code == 200 and r.headers["x-voice-id"] == "F1"
+
+
 async def test_unspeakable_characters_are_dropped(client: AsyncClient, engine: Engine) -> None:
     r = await client.post(
         "/v1/audio/speech",

@@ -100,8 +100,10 @@ def build_server(client: SupertonicClient, output_dir: Path) -> MCPServer:
             kind: Optional filter, ``"preset"`` (built in) or ``"custom"`` (user-imported).
             tag: Optional filter, keep only voices carrying this tag.
 
-        Returns a list of ``{id, name, kind, gender, tags, description}``. Pass ``id`` as the
-        ``voice`` argument of ``speak`` and ``preview_voice``.
+        Returns a list of ``{id, name, kind, gender, tags, description}``. Pass ``id`` or
+        ``name`` as the ``voice`` argument of ``speak`` and ``preview_voice``. Built-in voices
+        have names too (``F1`` is ``"Mia"``, ``M1`` is ``"Hugo"``) and a description of their
+        pitch, pace and suggested use.
         """
         try:
             voices = await client.voices(kind, tag)
@@ -124,7 +126,8 @@ def build_server(client: SupertonicClient, output_dir: Path) -> MCPServer:
 
         Args:
             text: Text to speak.
-            voice: Voice id from ``list_voices`` (e.g. ``"F1"``).
+            voice: Voice id or name from ``list_voices`` (e.g. ``"F1"`` or ``"Mia"``; any
+                capitalisation). The result's ``voice`` is always the id.
             language: Language code from ``list_languages``. Default ``"en"``.
             speed: Speaking rate, 0.7 to 2.0 (out of range is an error). Default 1.05.
             format: ``wav``, ``mp3``, ``flac``, ``opus``, ``aac`` or ``pcm`` (raw 16-bit
@@ -177,7 +180,7 @@ def build_server(client: SupertonicClient, output_dir: Path) -> MCPServer:
         """Save a short sample of a voice so it can be auditioned.
 
         Args:
-            voice: Voice id from ``list_voices``.
+            voice: Voice id or name from ``list_voices`` (e.g. ``"M1"`` or ``"Hugo"``).
             language: Language code from ``list_languages``. Default ``"en"``.
 
         Returns ``{path}``, the absolute path of a WAV file saved on this machine.

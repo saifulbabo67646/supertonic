@@ -29,6 +29,11 @@ async def test_timestamps(client: AsyncClient) -> None:
     assert jj["timing_unit"] == "character"
 
 
+async def test_voice_by_preset_name(client: AsyncClient) -> None:
+    r = await client.post("/v1/tts/timestamps", json={"text": "Hi.", "voice": "hugo"})
+    assert r.status_code == 200 and r.json()["voice"] == "M1"
+
+
 async def test_mp3_format(client: AsyncClient) -> None:
     j = (
         await client.post(

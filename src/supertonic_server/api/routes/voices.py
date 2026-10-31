@@ -126,8 +126,8 @@ async def import_voice(request: Request, state: State) -> dict[str, Any]:
 
 @router.get("/voices/{voice_id}")
 async def get_voice(voice_id: str, state: State) -> dict[str, Any]:
-    """Return one voice."""
-    return _view(state.library.get(voice_id))
+    """Return one voice (by id or name)."""
+    return _view(state.library.resolve(voice_id))
 
 
 @router.patch("/voices/{voice_id}")
@@ -148,8 +148,8 @@ async def delete_voice(voice_id: str, state: State) -> Response:
 
 @router.get("/voices/{voice_id}/style")
 async def export_style(voice_id: str, state: State) -> Response:
-    """Download the voice's style JSON."""
-    voice = state.library.get(voice_id)
+    """Download the voice's style JSON (by id or name)."""
+    voice = state.library.resolve(voice_id)
     body = json.dumps(state.library.style_json(voice.id))
     return Response(
         body,
@@ -160,6 +160,7 @@ async def export_style(voice_id: str, state: State) -> Response:
 
 @router.get("/voices/{voice_id}/preview")
 async def voice_preview(voice_id: str, state: State, language: str = "en") -> Response:
-    """Return the cached sample WAV for a voice in ``language``."""
-    path = await preview(state, voice_id, language)
-    return Response(path.read_bytes(), media_type="audio/wav")
+    """Return the cached sample WAV for a voice (by id or name) in ``language``."""
+    voice = state.library.resolve(voice_id)
+    path = await preview(state, voice.id, language)
+    return Response(path.read_bytes(), media_type="audio/wav", headers={"X-Voice-Id": voice.id})
