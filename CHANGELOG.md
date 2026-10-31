@@ -48,6 +48,11 @@ All notable changes to this project are documented here. The format is based on
   links; the version is defined once, in `supertonic_server.__version__`.
 - CI runs lint and type checks once, the tests on Linux, macOS and Windows with Python
   3.11 to 3.13, and a package build check, on current GitHub Actions versions.
+- CI installs Node 22 so the Studio's JavaScript tests always run there (they fail
+  instead of being skipped when `CI` is set and Node is missing), and runs on `main` are
+  no longer cancelled by later pushes. Dependabot leaves `torch`, `torchaudio` and
+  `torchvision` alone (they are pinned together from the CUDA index); the large-file
+  pre-commit check skips `docs/media/`.
 - Internal: the voice builder's job runner moved to its own module (no behaviour change).
 - `scripts/setup-builder.ps1` and `.sh` end with how to start the server; the LAN `.env`
   lines (`SUPERTONIC_HOST=0.0.0.0` and a key) are now clearly optional and come after the

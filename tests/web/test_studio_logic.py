@@ -1,10 +1,15 @@
-"""Run the Studio's JavaScript unit tests with Node's test runner (skipped without Node)."""
+"""Run the Studio's JavaScript unit tests with Node's test runner.
+
+Skipped without a recent Node, except in CI (``CI`` is set), where a missing Node fails.
+"""
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from pathlib import Path
+from typing import NoReturn
 
 import pytest
 
@@ -29,13 +34,19 @@ def _node_flags(node: str) -> list[str] | None:
     return None
 
 
+def _skip_or_fail(reason: str) -> NoReturn:
+    if os.environ.get("CI"):
+        pytest.fail(f"{reason}; CI must run the Studio tests")
+    pytest.skip(reason)
+
+
 def test_studio_logic() -> None:
     node = shutil.which("node")
     if node is None:
-        pytest.skip("Node.js is not installed")
+        _skip_or_fail("Node.js is not installed")
     flags = _node_flags(node)
     if flags is None:
-        pytest.skip("Node.js 20.10 or newer is needed")
+        _skip_or_fail("Node.js 20.10 or newer is needed")
     result = subprocess.run(
         [node, *flags, "--test", "studio_logic.test.mjs"],
         cwd=HERE,

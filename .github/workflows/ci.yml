@@ -11,7 +11,8 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Superseded pull request runs are cancelled; every run on main finishes.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   lint:
@@ -37,6 +38,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
       - run: uv python install ${{ matrix.python-version }}
       - run: uv sync --locked --python ${{ matrix.python-version }}
       - run: uv run mypy

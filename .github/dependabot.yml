@@ -7,6 +7,11 @@ updates:
     groups:
       python-dependencies:
         patterns: ["*"]
+    # Pinned together from the PyTorch CUDA 12.6 index; bump all three by hand.
+    ignore:
+      - dependency-name: torch
+      - dependency-name: torchaudio
+      - dependency-name: torchvision
     open-pull-requests-limit: 5
 
   - package-ecosystem: github-actions
