@@ -7,9 +7,11 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from importlib.resources import files
 from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from starlette.responses import Response
 
 from supertonic_server.api.builder_boot import start_builder
 from supertonic_server.api.deps import AppState
@@ -20,6 +22,19 @@ from supertonic_server.builder import Builder
 from supertonic_server.core.config import Settings, check_startup
 from supertonic_server.engine import Engine, load_engine
 from supertonic_server.voices import VoiceLibrary
+
+
+class StudioFiles(StaticFiles):
+    """Static files that browsers revalidate on every load (``Cache-Control: no-cache``).
+
+    The Studio is a set of ES modules; without this, a browser may keep some old modules after
+    an upgrade and mix them with new ones, which leaves a blank page.
+    """
+
+    def file_response(self, *args: Any, **kwargs: Any) -> Response:
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
 
 
 def create_app(
@@ -81,5 +96,5 @@ def create_app(
     # ES modules need a JavaScript MIME type; some Windows registries map .js to text/plain.
     mimetypes.add_type("text/javascript", ".js")
     web = Path(str(files("supertonic_server") / "web"))
-    app.mount("/", StaticFiles(directory=web, html=True), name="web")
+    app.mount("/", StudioFiles(directory=web, html=True), name="web")
     return app
