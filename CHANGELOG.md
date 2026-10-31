@@ -15,6 +15,14 @@ All notable changes to this project are documented here. The format is based on
   keep working and responses still return the id. Custom voices cannot take a built-in
   name or id (`409 voice_name_taken`). The web UI shows "Mia · F1" labels and the
   selected voice's description.
+- One-click launchers for people who do not use a terminal: `Start Supertonic.command`
+  (macOS), `Start Supertonic.bat` (Windows) and `start-supertonic.sh` (Linux) install uv
+  if needed, install the dependencies (with the voice builder on NVIDIA machines, falling
+  back to a plain install if that fails), start the server and open the Studio. New
+  `supertonic-server launch` (reuse a running server, else pick a free port from 8787 to
+  8799, start, open the browser; `--no-open`) and `serve --open`. The Connect page says
+  how to stop the server; `docs/troubleshooting.md` covers the first start, macOS and
+  Windows warnings, ports, the builder install and where data lives.
 - Community files for the public repository: a full Contributor Covenant 2.1, a security
   policy with supported versions and private reporting, GitHub issue forms, a pull request
   template, a docs index (`docs/README.md`), CodeQL scanning and weekly Dependabot updates.

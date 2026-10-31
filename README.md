@@ -23,6 +23,23 @@ small web UI. Runs on CPU (ONNX Runtime) on macOS and Windows (Linux should work
 
 ## Quick start
 
+### Easiest: double-click
+
+Download this repository (green **Code** button, then **Download ZIP**, and unzip it), open
+the folder and double-click the launcher for your computer:
+
+| System | Double-click |
+|---|---|
+| macOS | `Start Supertonic.command` (the first time: right-click, **Open**) |
+| Windows | `Start Supertonic.bat` |
+| Linux | `start-supertonic.sh` (or run it from a terminal) |
+
+It installs everything it needs on the first start (an internet connection is required
+then), starts the server and opens the Studio in your browser. Close the window to stop it.
+Problems: [docs/troubleshooting.md](docs/troubleshooting.md).
+
+### From a terminal
+
 Requires [uv](https://docs.astral.sh/uv/) (it installs Python 3.11+ for you). The model
 downloads from Hugging Face on first start.
 

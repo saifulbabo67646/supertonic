@@ -5,6 +5,7 @@ it. These pages go deeper.
 
 | Page | What it covers |
 |---|---|
+| [Troubleshooting](troubleshooting.md) | Starting with the double-click launchers: first start, macOS and Windows warnings, ports, the voice builder install, where data lives and how to reset. |
 | [API reference](api.md) | Every HTTP endpoint and the realtime WebSocket: requests, responses, limits and error codes. |
 | [Built-in voices](voices.md) | The ten built-in voices, their names, what they sound like and how that was measured. |
 | [Voice builder](builder.md) | Building a voice from your own recordings on an NVIDIA GPU, forwarding builds from another machine, and troubleshooting. |

@@ -755,6 +755,9 @@ textarea.script::placeholder {
   gap: 10px;
   align-content: start;
 }
+.connect-top > .connect-stop {
+  grid-column: 1 / -1;
+}
 .base-url {
   font-size: 1rem;
   padding: 7px 12px;

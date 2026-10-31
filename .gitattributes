@@ -1,0 +1,5 @@
+# Line endings for the launchers: batch files need CRLF, shell scripts need LF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.sh text eol=lf
+*.command text eol=lf

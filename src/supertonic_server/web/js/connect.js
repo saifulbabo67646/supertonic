@@ -173,6 +173,16 @@ export function mount(root) {
         ),
       ),
       h("div", {}, h("h2", { text: "API key" }), ui.key),
+      h(
+        "div",
+        { class: "connect-stop" },
+        h("h2", { text: "Stopping the server" }),
+        h("p", {
+          text:
+            "Supertonic runs in the window that opened when you started it. To stop it, close " +
+            "that window (or press Ctrl+C in it). To start it again, open Start Supertonic again.",
+        }),
+      ),
     ),
     ui.status,
     ui.snippets,
