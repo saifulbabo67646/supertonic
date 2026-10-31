@@ -1,8 +1,9 @@
 # Set up this Windows machine as a Supertonic voice builder (NVIDIA GPU + CUDA required).
 #
 # Installs the builder extra, checks that the worker sees CUDA and both build methods,
-# downloads the models a build needs, and prints the .env lines for this machine and for
-# the machine that forwards builds here. Runs on Windows PowerShell 5.1 and PowerShell 7.
+# downloads the models a build needs, and says how to start. For a builder that other
+# computers reach over a LAN it also prints the .env lines (nothing to set otherwise).
+# Runs on Windows PowerShell 5.1 and PowerShell 7.
 #
 #   powershell -ExecutionPolicy Bypass -File scripts\setup-builder.ps1 [-Port 8787] [-OpenFirewall]
 #
@@ -61,28 +62,34 @@ $rule = "New-NetFirewallRule -DisplayName `"Supertonic`" -Direction Inbound -Pro
     "-LocalPort $Port -Action Allow -Profile Private"
 
 Write-Host ''
-Write-Host '== Done. Put these lines in .env on THIS machine (the builder):'
+Write-Host '== Done. The voice builder is installed on this computer.'
 Write-Host ''
-Write-Host '   SUPERTONIC_HOST=0.0.0.0'
-Write-Host "   SUPERTONIC_PORT=$Port"
-Write-Host "   SUPERTONIC_API_KEY=$key"
+Write-Host '   Start the server again (scripts\serve.ps1, or as in AGENTS.md step 4).'
+Write-Host '   GET /v1/health then shows "builder":"local". Nothing else needs to change here.'
 Write-Host ''
-Write-Host '== ...and these on the machine that forwards builds here:'
+Write-Host '== Only if another computer should send its voice builds here:'
 Write-Host ''
-Write-Host "   SUPERTONIC_BUILDER_URL=http://${ip}:$Port"
-Write-Host "   SUPERTONIC_BUILDER_API_KEY=$key"
+Write-Host '   Over an SSH tunnel (recommended, nothing listens on the network): leave this'
+Write-Host '   computer as it is; see docs/builder.md, "Forwarding builds > Over an SSH tunnel".'
 Write-Host ''
-Write-Host '   Then start the builder with scripts\serve.ps1.'
-Write-Host '   No trusted LAN? Keep SUPERTONIC_HOST=127.0.0.1 here and use an SSH tunnel instead'
-Write-Host '   (see docs/builder.md, "Forwarding builds > Over an SSH tunnel").'
+Write-Host '   Over a trusted LAN instead, put these lines in .env on THIS computer:'
+Write-Host ''
+Write-Host '      SUPERTONIC_HOST=0.0.0.0'
+Write-Host "      SUPERTONIC_PORT=$Port"
+Write-Host "      SUPERTONIC_API_KEY=$key"
+Write-Host ''
+Write-Host '   and these on the computer that forwards builds here:'
+Write-Host ''
+Write-Host "      SUPERTONIC_BUILDER_URL=http://${ip}:$Port"
+Write-Host "      SUPERTONIC_BUILDER_API_KEY=$key"
 Write-Host ''
 if ($OpenFirewall) {
     Write-Host "== Opening TCP $Port for Private networks"
     Invoke-Expression $rule
 } else {
-    Write-Host '== Other machines on the LAN need an inbound firewall rule. As Administrator, run:'
+    Write-Host '   The LAN way also needs an inbound firewall rule. As Administrator, run:'
     Write-Host ''
-    Write-Host "   $rule"
+    Write-Host "      $rule"
     Write-Host ''
     Write-Host '   (or re-run this script with -OpenFirewall)'
 }

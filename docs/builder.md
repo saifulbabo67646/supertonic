@@ -66,9 +66,10 @@ both are stored with the voice.
 ## Setting up a builder
 
 The setup script installs the `builder` extra (PyTorch with CUDA and the other build
-dependencies), checks that the build worker sees the GPU and both methods, downloads every
-model a build needs, and prints the `.env` lines for the builder and for a machine that
-forwards to it.
+dependencies), checks that the build worker sees the GPU and both methods and downloads
+every model a build needs. Building on this machine needs no `.env` changes. At the end it
+also prints `.env` lines for [a builder on a trusted LAN](#over-a-trusted-lan); use them
+only if you want that.
 
 Windows (PowerShell 5.1 or 7):
 
@@ -153,8 +154,9 @@ use this only on a network you trust.
 
 If you can `ssh` from the forwarding machine to the builder, nothing has to listen on the
 network and no firewall rule is needed. Leave the builder on loopback (the default
-`SUPERTONIC_HOST=127.0.0.1`, still with an API key), and on the forwarding machine open a
-tunnel from a local port to the builder's loopback port:
+`SUPERTONIC_HOST=127.0.0.1`; an API key is optional here, since only the tunnel reaches
+it), and on the forwarding machine open a tunnel from a local port to the builder's
+loopback port:
 
 ```bash
 ssh -N -L 8788:127.0.0.1:8787 user@builder-host     # keep it running (or add -f)
@@ -162,7 +164,7 @@ ssh -N -L 8788:127.0.0.1:8787 user@builder-host     # keep it running (or add -f
 
 ```dotenv
 SUPERTONIC_BUILDER_URL=http://127.0.0.1:8788
-SUPERTONIC_BUILDER_API_KEY=<the builder's SUPERTONIC_API_KEY>
+SUPERTONIC_BUILDER_API_KEY=<the builder's SUPERTONIC_API_KEY, only if it has one>
 ```
 
 Windows 10/11 include an OpenSSH server (Settings > System > Optional features). The
@@ -217,6 +219,10 @@ sentences.
   format, at most 25 MB in total. Speech must total 3 to 60 s after silence is trimmed.
 - Close microphone, little room echo, natural reading voice. The voice copies what it
   hears, including noise and room colour.
+- To try the builder before you have a recording, use a built-in voice as the reference:
+  `curl -s http://127.0.0.1:8787/v1/audio/speech -H 'Content-Type: application/json' -d
+  '{"input":"<a paragraph of about 40 seconds>","voice":"Hugo","response_format":"wav"}'
+  -o reference.wav`.
 - Recordings that are mostly silence are rejected (`invalid_reference_audio` with the
   reason), as are files that are not audio.
 
@@ -245,6 +251,6 @@ sentences.
 
 | Variable | Default | Effect |
 |---|---|---|
-| `SUPERTONIC_BUILDER_ACCURATE_STEPS` | unset (3000) | Caps the `accurate` descent at this many steps, for quick test builds. A positive integer; anything else fails the build. Read by the builder worker from the process environment (set it where the builder server starts; a `.env` entry is not passed on). |
+| `SUPERTONIC_BUILDER_ACCURATE_STEPS` | unset (3000) | Caps the `accurate` descent at this many steps, for quick test builds. A positive integer; anything else fails the build. Read by the builder worker from the process environment (set it where the builder server starts; a `.env` entry is not passed on): `SUPERTONIC_BUILDER_ACCURATE_STEPS=60 uv run supertonic-server serve` on macOS and Linux; on Windows `$env:SUPERTONIC_BUILDER_ACCURATE_STEPS = '60'` before `scripts\serve.ps1`, or `cmd /c set SUPERTONIC_BUILDER_ACCURATE_STEPS=60&& uv run supertonic-server serve ...` in the background start of [AGENTS.md](../AGENTS.md) step 4. Loading, the preset scan and the rhythm stage do not shrink with it: a 60-step build still took about 9 minutes on an RTX 4050 Laptop GPU. |
 
 Measured timings and VRAM: [benchmarks-builder.md](benchmarks-builder.md).

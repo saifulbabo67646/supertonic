@@ -2,8 +2,8 @@
 # Set up this Linux machine as a Supertonic voice builder (NVIDIA GPU + CUDA required).
 #
 # Installs the builder extra, checks that the worker sees CUDA and both build methods,
-# downloads the models a build needs, and prints the .env lines for this machine and for
-# the machine that forwards builds here.
+# downloads the models a build needs, and says how to start. For a builder that other
+# computers reach over a LAN it also prints the .env lines (nothing to set otherwise).
 #
 #   scripts/setup-builder.sh [port]        (default port 8787)
 set -euo pipefail
@@ -55,20 +55,27 @@ ip="$( (ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i < NF; i++) if 
 
 cat <<MSG
 
-== Done. Put these lines in .env on THIS machine (the builder):
+== Done. The voice builder is installed on this computer.
 
-   SUPERTONIC_HOST=0.0.0.0
-   SUPERTONIC_PORT=$port
-   SUPERTONIC_API_KEY=$key
+   Start the server again (scripts/serve.sh, or as in AGENTS.md step 4).
+   GET /v1/health then shows "builder":"local". Nothing else needs to change here.
 
-== ...and these on the machine that forwards builds here:
+== Only if another computer should send its voice builds here:
 
-   SUPERTONIC_BUILDER_URL=http://$ip:$port
-   SUPERTONIC_BUILDER_API_KEY=$key
+   Over an SSH tunnel (recommended, nothing listens on the network): leave this
+   computer as it is; see docs/builder.md, "Forwarding builds > Over an SSH tunnel".
 
-   Then start the builder with scripts/serve.sh.
+   Over a trusted LAN instead, put these lines in .env on THIS computer:
+
+      SUPERTONIC_HOST=0.0.0.0
+      SUPERTONIC_PORT=$port
+      SUPERTONIC_API_KEY=$key
+
+   and these on the computer that forwards builds here:
+
+      SUPERTONIC_BUILDER_URL=http://$ip:$port
+      SUPERTONIC_BUILDER_API_KEY=$key
+
    If a firewall is active, allow TCP $port from your LAN only, e.g.:
-     sudo ufw allow from 192.168.0.0/16 to any port $port proto tcp
-   No trusted LAN? Keep SUPERTONIC_HOST=127.0.0.1 here and use an SSH tunnel instead
-   (see docs/builder.md, "Forwarding builds > Over an SSH tunnel").
+      sudo ufw allow from 192.168.0.0/16 to any port $port proto tcp
 MSG

@@ -49,12 +49,18 @@ All notable changes to this project are documented here. The format is based on
 - CI runs lint and type checks once, the tests on Linux, macOS and Windows with Python
   3.11 to 3.13, and a package build check, on current GitHub Actions versions.
 - Internal: the voice builder's job runner moved to its own module (no behaviour change).
+- `scripts/setup-builder.ps1` and `.sh` end with how to start the server; the LAN `.env`
+  lines (`SUPERTONIC_HOST=0.0.0.0` and a key) are now clearly optional and come after the
+  SSH-tunnel way, so nobody opens a builder to the network by copying them.
 
 ### Fixed
 
 - `scripts/serve.sh` and `scripts/serve.ps1` no longer uninstall the voice builder extra
   (`uv sync --inexact`).
 - CONTRIBUTING's start command (`uv run supertonic-server serve`).
+- AGENTS.md: the Windows background start survives the end of the agent's command (also
+  over SSH); step-by-step SSH tunnel for forwarding builds from a Mac; the builder setup
+  can run before the first start.
 
 ## [0.1.0] - 2026-10-31
 

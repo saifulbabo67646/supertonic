@@ -52,7 +52,10 @@ curl -s http://127.0.0.1:8787/v1/health
 Windows: `curl.exe -s http://127.0.0.1:8787/v1/health`.
 
 - JSON with `"model":"supertonic-3"`: a Supertonic server is already running there. Reuse
-  it: skip to step 5 and do not start a second one.
+  it: skip to step 5 and do not start a second one. It may be an older copy started from
+  another folder: if `curl -s http://127.0.0.1:8787/v1/voices` lists no voice named `Mia`,
+  tell the user it is out of date (restarting it from this folder updates it; ask first,
+  since you did not start it).
 - Nothing answers (curl prints nothing, exit status 7): start one in step 4.
 - Something else answers: port 8787 belongs to another program. Use another port, for
   example `--port 8790`, in every command below (and `--url http://127.0.0.1:8790` for
@@ -78,16 +81,26 @@ nohup uv run supertonic-server serve > supertonic-server.log 2>&1 &
 echo $! > supertonic-server.pid
 ```
 
-Windows (PowerShell):
+Windows (PowerShell). This starts the server through Windows' process service (WMI), so it
+is not tied to your shell and keeps running after your command returns, also over SSH
+(where a `Start-Process` child is stopped when the session ends):
 
 ```powershell
-$p = Start-Process uv -ArgumentList "run", "supertonic-server", "serve" -RedirectStandardOutput supertonic-server.log -RedirectStandardError supertonic-server.err.log -WindowStyle Hidden -PassThru
-$p.Id | Set-Content supertonic-server.pid
+$cmd = 'cmd /c uv run supertonic-server serve > supertonic-server.log 2> supertonic-server.err.log'
+$hidden = New-CimInstance -ClassName Win32_ProcessStartup -ClientOnly -Property @{ ShowWindow = [uint16]0 }
+$p = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = $cmd; CurrentDirectory = (Get-Location).Path; ProcessStartupInformation = $hidden }
+$p.ProcessId | Set-Content supertonic-server.pid
 ```
 
 On Windows the server's messages go to `supertonic-server.err.log` and the request log to
-`supertonic-server.log`. Add `--port <port>` after `serve` to use another port. The log and
-pid files are ignored by Git.
+`supertonic-server.log`. A server started this way does not see environment variables set
+in your shell: put settings in `.env` instead (or, for a one-off variable, start the
+command with `cmd /c set NAME=value&& uv run ...`). Add `--port <port>` after `serve` (on
+every system) to use another port. The log and pid files are ignored by Git.
+
+Voices you make are stored in `~/.supertonic-server` (`%USERPROFILE%\.supertonic-server` on
+Windows) and the model in the Hugging Face cache; `SUPERTONIC_DATA_DIR` and
+`SUPERTONIC_MODEL_DIR` move them ([configuration](docs/configuration.md)).
 
 Wait until it answers. The first start downloads the model, which can take several minutes
 on a slow connection; later starts take a few seconds. These loops wait up to 10 minutes
@@ -119,10 +132,11 @@ If it does not come up, read the end of the log file and look for the message in
 **For a person rather than an agent**, the double-click launchers (`Start
 Supertonic.command` on macOS, `Start Supertonic.bat` on Windows, `start-supertonic.sh` on
 Linux) do all of the above in a window and open the Studio; closing the window stops the
-server. In a terminal the same is `uv run supertonic-server launch`: it reuses a running
-server, otherwise picks a free port from 8787 to 8799, starts, and opens the browser once
-the server is ready (`--no-open` to skip that). Both run in the foreground and keep running
-until stopped, so an agent should only use them when the user wants that window.
+server. In a terminal the same is `uv run supertonic-server launch`: if a server is
+already running it prints its URL, opens it and exits; otherwise it picks a free port from
+8787 to 8799, starts, and opens the browser once the server is ready (`--no-open` to skip
+that). A server it starts runs in the foreground until stopped, so an agent should only use
+the launchers when the user wants that window.
 
 ## 5. Verify
 
@@ -183,9 +197,9 @@ A launcher window stops with Ctrl+C or by closing it.
 
 Building a voice from a recording needs an NVIDIA GPU (4 GB of free VRAM, `nvidia-smi`
 must work) on Windows or Linux. The built voice then runs on CPU everywhere. Ask the user
-before this step: it downloads about 3 GB.
-
-Stop the server (step 6), then:
+before this step: it downloads about 3 GB. If the user asked for the builder from the
+start, do this step after `uv sync --inexact` and before starting the server in step 4;
+otherwise stop the server you started (step 6) first.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\setup-builder.ps1   # Windows
@@ -195,23 +209,44 @@ powershell -ExecutionPolicy Bypass -File scripts\setup-builder.ps1   # Windows
 scripts/setup-builder.sh                                            # Linux
 ```
 
-The script installs the `builder` extra, checks CUDA, downloads the models and prints `.env`
-lines. Start the server again as in step 4. `GET /v1/health` then shows `"builder":"local"`.
+The script installs the `builder` extra, checks CUDA and downloads the models. Nothing has
+to go in `.env` for building on this machine: the `.env` lines it prints at the end are only
+for a builder that other computers reach over the LAN, which opens it to the network, so
+do not apply them unless the user asked for that. Start the server (again) as in step 4.
+`GET /v1/health` then shows `"builder":"local"`.
 From now on install with `uv sync --extra builder` or `uv sync --inexact`: a plain
 `uv sync` removes the builder again.
 
-**A Mac (or any machine without a GPU) can forward builds** to such a machine. On the
-forwarding machine put this in `.env` and restart:
+**A Mac (or any machine without a GPU) can forward builds** to such a machine. The GPU
+machine runs Supertonic with the builder on `127.0.0.1:8787` as above; nothing there
+changes. On the forwarding machine:
 
-```dotenv
-SUPERTONIC_BUILDER_URL=http://127.0.0.1:8788
-SUPERTONIC_BUILDER_API_KEY=<the builder's SUPERTONIC_API_KEY, if it has one>
-```
+1. Check that SSH works without a password prompt:
+   `ssh -o BatchMode=yes <gpu-machine> exit` (exit status 0). If not, ask the user to set
+   up an SSH key for that machine.
+2. Open the tunnel in the background (local port 8788 to the GPU machine's 8787; macOS and
+   Linux):
 
-with an SSH tunnel to the GPU machine kept open (`ssh -N -L 8788:127.0.0.1:8787 <gpu-machine>`),
-or the GPU machine's LAN address instead of the tunnel when the user wants the builder on
-the network (that needs an API key on the builder and a firewall rule; ask first). Health
-on the forwarding machine then shows `"builder":"remote"`. Full guide:
+   ```bash
+   nohup ssh -N -o ExitOnForwardFailure=yes -L 8788:127.0.0.1:8787 <gpu-machine> > supertonic-server-tunnel.log 2>&1 &
+   echo $! > supertonic-server-tunnel.pid
+   sleep 3; curl -s http://127.0.0.1:8788/v1/health    # the GPU machine: "builder":"local"
+   ```
+
+   Stop it with `kill "$(cat supertonic-server-tunnel.pid)"`; start it again with the same
+   `nohup ssh ...` line. Builds need it open.
+3. Put this in `.env` in the repository and restart the server (step 6, then step 4; if
+   it is a server you did not start, ask the user first):
+
+   ```dotenv
+   SUPERTONIC_BUILDER_URL=http://127.0.0.1:8788
+   ```
+
+   Add `SUPERTONIC_BUILDER_API_KEY=<key>` only if the GPU machine's server has an API key.
+
+Health on the forwarding machine then shows `"builder":"remote"`. Instead of the tunnel,
+the GPU machine's LAN address works when the user wants the builder on the network (that
+needs an API key on the builder and a firewall rule; ask first). Full guide:
 [docs/builder.md](docs/builder.md).
 
 ## 8. Connect AI assistants and apps
@@ -263,7 +298,7 @@ calls changed: see [docs/integrations.md](docs/integrations.md) and the
 | The model download fails or stalls | Check the connection to `huggingface.co` (a company proxy or firewall may block it) and start again; a half-finished download is never used. |
 | `UnicodeEncodeError` or `charmap` errors on Windows | Set `$env:PYTHONUTF8 = '1'` and start again. |
 | `"builder":"none"` on a machine with an NVIDIA GPU | The builder extra is not installed, or a plain `uv sync` removed it. Run the setup script (step 7), or `uv sync --extra builder`, and restart. |
-| The server stops when the agent's command ends | Your tool kills background processes. Ask the user to start a launcher (step 4) instead. |
+| The server stops when the agent's command ends | Your tool kills background processes. On Windows use the start command in step 4 exactly (a `Start-Process` child dies with an SSH session). Otherwise ask the user to start a launcher (step 4) instead. |
 
 More, for the launchers and for people: [docs/troubleshooting.md](docs/troubleshooting.md).
 
