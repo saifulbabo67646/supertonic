@@ -1,6 +1,6 @@
 // Finished-build panel: build facts, a language picker, "Try it" on Speak and the voice card link.
 
-import { buildFacts } from "./build-copy.js";
+import { buildFacts, pitchWarning } from "./build-copy.js";
 import { getLanguages, getVoices, refreshVoices } from "./catalog.js";
 import { h } from "./dom.js";
 import { friendlyError } from "./errors.js";
@@ -42,11 +42,13 @@ export function resultNodes(job, { languages, voice }) {
   };
   lang?.addEventListener("change", setHref);
   setHref();
+  const warning = pitchWarning(voice?.build);
   const nodes = [
     h("p", {
       text: `Your voice “${job.request.name}” is ready. Pick a language and press Try it to hear it.`,
     }),
     voice?.build ? buildFacts(voice.build) : null,
+    warning ? h("p", { class: "pitch-warning", text: warning }) : null,
     h(
       "div",
       { class: "row" },

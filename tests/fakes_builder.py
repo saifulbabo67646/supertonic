@@ -92,6 +92,9 @@ def _done(
         "rate_ref": 3.0,
         "rate_final": 3.0,
         "stopped_early": stopped,
+        "pitch_reference_hz": 120.0,
+        "pitch_voice_hz": 124.0,
+        "pitch_match": True,
     }
     if steps is not None and args.method == "accurate":
         report["similarity"] = round(1 - loss, 4)

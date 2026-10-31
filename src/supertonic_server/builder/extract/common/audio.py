@@ -8,6 +8,8 @@ import librosa
 import numpy as np
 import soundfile as sf
 
+from supertonic_server.builder.extract.common.pitch import median_f0
+
 
 def check_readable(path: Path) -> None:
     """Fail fast, before any model loads, when ``path`` is missing or not decodable audio."""
@@ -29,3 +31,12 @@ def load_mono(path: Path, sr: int) -> np.ndarray:
         mono = librosa.resample(mono, orig_sr=file_sr, target_sr=sr)
     out: np.ndarray = np.ascontiguousarray(mono, dtype=np.float32)
     return out
+
+
+PITCH_SR = 16000
+"""Rate the reference pitch is measured at (plenty for 60 to 400 Hz)."""
+
+
+def reference_f0(path: Path) -> float | None:
+    """Median F0 of the reference recording in Hz, or ``None`` when it is unclear."""
+    return median_f0(load_mono(path, PITCH_SR), PITCH_SR)

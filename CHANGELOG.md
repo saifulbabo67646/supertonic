@@ -60,6 +60,14 @@ All notable changes to this project are documented here. The format is based on
 
 ### Fixed
 
+- Voice building chooses its start voice by pitch first, so a man's recording no longer
+  becomes a woman's voice. Both methods measure the median pitch of the recording and of
+  each built-in voice in the scan (shown as `F4: 0.3123 · 198 Hz`); only the built-in
+  voices within about ±22% compete (the two nearest by pitch when none is), and the best
+  judge score among them wins. The build report adds `pitch_reference_hz`,
+  `pitch_voice_hz` and `pitch_match`, MCP `get_job` returns the new voice's `build`
+  report, and the Studio warns when a finished voice sounds higher or lower than its
+  recording.
 - A custom voice can no longer take over a built-in name: lookups now try the exact id,
   then the built-in name, then the id in any capitalisation, then the custom voice name, so
   `"Mia"` always means `F1` (a voice saved earlier with the id `mia` still answers to

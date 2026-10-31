@@ -7,7 +7,7 @@ const JS = "../../src/supertonic_server/web/js";
 const { friendlyError, friendlyJobError } = await import(`${JS}/errors.js`);
 const { READING_TEXTS, readingText } = await import(`${JS}/reading-texts.js`);
 const { snippets, DIR_PLACEHOLDER, KEY_PLACEHOLDER } = await import(`${JS}/connect-snippets.js`);
-const { METHOD_HELP, METHOD_NAMES, duration } = await import(`${JS}/build-copy.js`);
+const { METHOD_HELP, METHOD_NAMES, duration, pitchWarning } = await import(`${JS}/build-copy.js`);
 
 test("an unreachable server gets a sentence about the Supertonic window", () => {
   const text = friendlyError({ status: 0, message: "Could not reach the server (Failed to fetch)" });
@@ -113,4 +113,18 @@ test("every build method has a name and a help line", () => {
   assert.deepEqual(Object.keys(METHOD_HELP).sort(), Object.keys(METHOD_NAMES).sort());
   assert.equal(duration(3725), "1 h 02 min");
   assert.equal(duration(42), "42 s");
+});
+
+test("a built voice off its recording's pitch gets a plain warning", () => {
+  const high = pitchWarning({ pitch_match: false, pitch_reference_hz: 129, pitch_voice_hz: 202 });
+  assert.equal(
+    high,
+    "This voice sounds higher than your recording. " +
+      "Try making it again with a longer, clearer recording.",
+  );
+  const low = pitchWarning({ pitch_match: false, pitch_reference_hz: 210, pitch_voice_hz: 120 });
+  assert.match(low, /^This voice sounds lower than your recording\./);
+  for (const build of [{ pitch_match: true }, { pitch_match: null }, {}, null, undefined]) {
+    assert.equal(pitchWarning(build), null);
+  }
 });

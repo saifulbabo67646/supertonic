@@ -109,6 +109,21 @@ export function duration(seconds) {
   return `${s} s`;
 }
 
+/**
+ * The warning for a built voice whose pitch is clearly off its recording's
+ * (`pitch_match: false` in its build report), or null.
+ */
+export function pitchWarning(build) {
+  if (build?.pitch_match !== false) return null;
+  const ref = build.pitch_reference_hz;
+  const got = build.pitch_voice_hz;
+  const way = typeof ref === "number" && typeof got === "number" && got < ref ? "lower" : "higher";
+  return (
+    `This voice sounds ${way} than your recording. ` +
+    "Try making it again with a longer, clearer recording."
+  );
+}
+
 /** A definition list of a built voice's metadata (method, similarity, stopped early, time). */
 export function buildFacts(build) {
   const rows = [["Built with", METHOD_NAMES[build.method] || build.method || "unknown"]];

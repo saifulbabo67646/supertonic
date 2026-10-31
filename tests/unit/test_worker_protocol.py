@@ -31,6 +31,9 @@ REPORT_KEYS = {
     "rate_ref",
     "rate_final",
     "stopped_early",
+    "pitch_reference_hz",
+    "pitch_voice_hz",
+    "pitch_match",
 }
 
 # Runs the worker in a fresh interpreter where ``import torch`` fails (or is faked), so the

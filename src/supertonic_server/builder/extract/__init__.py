@@ -58,7 +58,8 @@ def extract_style(
     Returns:
         ``(style_json, report)``: the style in the shipped JSON format and a report with
         ``method, preset_start, preset_distance, loss, steps, duration_status, rate_ref,
-        rate_final, stopped_early`` (``accurate`` adds ``similarity`` and ``best_step``).
+        rate_final, stopped_early, pitch_reference_hz, pitch_voice_hz, pitch_match``
+        (``accurate`` adds ``similarity`` and ``best_step``).
 
     Raises:
         ValueError: ``method`` is not a known build method.

@@ -74,6 +74,7 @@ async def test_fast_builds_a_usable_voice(tts: Any, luna: Path, tmp_path: Path) 
     assert report["loss"] < 0.25
     assert report["stopped_early"] is False
     assert report["preset_start"] in {f"{g}{i}" for g in "FM" for i in range(1, 6)}
+    _assert_pitch(report, events)
     stages = [e.stage for e in events]
     assert {"loading", "preset", "timbre", "duration"} <= set(stages)
     timbre = [e for e in events if e.stage == "timbre"]
@@ -137,6 +138,15 @@ def _preset_dp(model_dir: Path, name: str) -> np.ndarray:
     return np.asarray(doc["style_dp"]["data"], dtype=np.float32)
 
 
+def _assert_pitch(report: dict[str, Any], events: list[Progress]) -> None:
+    """Luna's pitch is measured, every preset shows its pitch, the voice keeps it."""
+    assert report["pitch_reference_hz"] is not None
+    assert report["pitch_voice_hz"] is not None
+    assert report["pitch_match"] is True
+    presets = [e.message for e in events if e.stage == "preset"]
+    assert presets and all(m.endswith(" Hz") or m.endswith("no clear pitch") for m in presets)
+
+
 def test_accurate_builds_a_closer_voice(
     tts: Any, luna: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -167,6 +177,7 @@ def test_accurate_builds_a_closer_voice(
     assert 1 <= report["steps"] <= int(ACCURATE_GPU_STEPS)
     presets = [e for e in events if e.stage == "preset"]
     assert len(presets) == 10 and all(e.loss is not None for e in presets)
+    _assert_pitch(report, events)
     timbre = [e for e in events if e.stage == "timbre"]
     assert timbre and all(e.total == int(ACCURATE_GPU_STEPS) for e in timbre)
     assert [e.step for e in timbre[:2]] == [8, 16]

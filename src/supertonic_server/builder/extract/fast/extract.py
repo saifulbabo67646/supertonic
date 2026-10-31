@@ -30,6 +30,7 @@ from supertonic_server.builder.extract.common import (
     load_style,
     nearest_preset,
     preset_path,
+    reference_f0,
 )
 from supertonic_server.builder.extract.fast.config import FastConfig
 from supertonic_server.builder.extract.fast.invert_ttl import invert
@@ -59,6 +60,8 @@ def extract_style(
     dev = torch.device(device)
     check_readable(wav_path)
     presets = list_presets(model_dir)
+    ref_f0 = reference_f0(wav_path)
+    logger.info("reference median F0: %s", "unclear" if ref_f0 is None else f"{ref_f0:.1f} Hz")
 
     on_progress(progress("loading", "converting Supertonic 3 to PyTorch"))
     m = cfg.model
@@ -80,11 +83,11 @@ def extract_style(
         objective(wavlm, cfg.timbre.layer, target),
         on_progress=on_progress,
         should_stop=should_stop,
+        reference_f0=ref_f0,
     )
     if chosen is None:
         raise NothingToSaveError("stopped before any preset was measured; nothing to save")
     path, distance, preset_stopped = chosen
-    logger.info("nearest preset %s at %.4f", path.stem, distance)
     ttl, dp = load_style(path, dev)
 
     timbre = invert(
@@ -117,4 +120,5 @@ def extract_style(
         loss=timbre.loss,
         steps=timbre.steps,
         stopped_early=preset_stopped or timbre.stopped,
+        reference_f0=ref_f0,
     )

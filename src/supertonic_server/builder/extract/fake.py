@@ -75,5 +75,8 @@ def extract_style(
         steps=1 if stopped else FAKE_STEPS,
         duration=duration,
         stopped_early=stopped,
+        pitch_reference_hz=120.0,
+        pitch_voice_hz=124.0,
+        pitch_match=True,
     )
     return make_style(source=Path(wav_path).name), report

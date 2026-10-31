@@ -102,6 +102,8 @@ async def test_build_happy_path(bclient: httpx.AsyncClient, control: Path) -> No
     assert done["state"] == "succeeded", done["error"]
     voice = (await bclient.get(f"/v1/voices/{done['voice_id']}")).json()
     assert voice["kind"] == "custom" and voice["build"]["method"] == "accurate"
+    pitch = {k: voice["build"][k] for k in ("pitch_reference_hz", "pitch_voice_hz", "pitch_match")}
+    assert pitch == {"pitch_reference_hz": 120.0, "pitch_voice_hz": 124.0, "pitch_match": True}
     assert voice["source_note"] == "my own voice"
     listed = (await bclient.get("/v1/jobs")).json()["data"]
     assert [j["id"] for j in listed] == [job["id"]]

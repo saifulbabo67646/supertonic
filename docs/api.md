@@ -181,7 +181,14 @@ with the `builder` extra installed (`GET /v1/health` shows `"builder":"local"`).
 every endpoint below answers `503 builder_unavailable` with a hint to set
 `SUPERTONIC_BUILDER_URL` or install the builder extra on a CUDA machine. Built voices are
 ordinary custom voices with an extra `build` object (`method`, `loss`, `similarity`,
-`steps`, `preset_start`, `duration_status`, `seconds`, `stopped_early`, `builder`). They
+`steps`, `preset_start`, `duration_status`, `seconds`, `stopped_early`, `builder`,
+`pitch_reference_hz`, `pitch_voice_hz`, `pitch_match`). The pitch keys are the median
+pitch in Hz of the recording and of the new voice (`null` when it could not be measured)
+and whether they are within about ±22% (`null` when either is unknown); `pitch_match:
+false` means the voice sounds clearly higher or lower than the recording (see
+[builder.md](builder.md#the-pitch-check)). A succeeded job's `voice_id` names that voice:
+`GET /v1/voices/{voice_id}` returns it with its `build` object. MCP `get_job` returns
+the same `build` object once the job succeeded. They
 derive from the Supertonic model, so the OpenRAIL-M terms apply to them too.
 
 `POST /v1/voices/build` takes `multipart/form-data`:

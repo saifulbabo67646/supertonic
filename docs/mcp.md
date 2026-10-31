@@ -5,7 +5,9 @@ audio files on the machine it runs on. Tools: `list_languages`, `list_voices`, `
 (optionally with word timestamps) and `preview_voice` (a voice is an id like `F1` or a name
 like `Mia`), plus voice building:
 `build_voice` (reference audio paths, name, `source_note`, `consent`, `method` `accurate` or
-`fast`), `get_job`, `list_jobs` and `finish_job`.
+`fast`), `get_job`, `list_jobs` and `finish_job`. Once a build succeeded, `get_job` also
+returns the new voice's `build` report; `pitch_match: false` there means the voice sounds
+clearly higher or lower than the recording ([builder.md](builder.md#the-pitch-check)).
 
 Claude Code:
 

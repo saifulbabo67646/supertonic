@@ -210,6 +210,11 @@
 .job-result:empty {
   display: none;
 }
+.pitch-warning {
+  margin: 0;
+  color: var(--danger);
+  font-weight: 500;
+}
 .badge.state-running,
 .badge.state-queued {
   background: var(--accent-soft);

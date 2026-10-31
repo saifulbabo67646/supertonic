@@ -106,7 +106,9 @@ async def test_build_then_poll_get_job(mcp: MCPServer, audio: str) -> None:
     assert set(started) == {"job_id", "state", "method"} and started["method"] == "accurate"
     done = await wait_done(mcp, started["job_id"])
     assert done["state"] == "succeeded" and done["voice_id"]
-    assert set(done) == {"state", "progress", "voice_id", "error"}
+    assert set(done) == {"state", "progress", "voice_id", "error", "build"}
+    assert (done["build"]["pitch_reference_hz"], done["build"]["pitch_match"]) == (120.0, True)
+    assert done["build"]["pitch_voice_hz"] == 124.0
     voices = await call(mcp, "list_voices", kind="custom")
     assert done["voice_id"] in [v["id"] for v in voices]
 

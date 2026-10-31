@@ -394,11 +394,14 @@ def test_finish_during_timbre_still_matches_rhythm(
     assert report["stopped_early"] is True
     assert report["duration_status"] != "stopped"
     assert report["rate_final"] is not None
+    # the reference (_wav) and the stand-in voice are both 200 Hz tones
+    assert report["pitch_reference_hz"] == pytest.approx(200.0, rel=0.03)
+    assert report["pitch_match"] is True
     duration_steps = [e.step for e in events if e.stage == "duration"]
     assert duration_steps[0] == 0 and max(s or 0 for s in duration_steps) >= 1
 
 
-def _finish(wav: Path, stop: Any) -> dict[str, Any]:
+def _finish(wav: Path, stop: Any, reference_f0: float | None = None) -> dict[str, Any]:
     _, report = finish_with_duration(
         "fast",
         wav,
@@ -414,6 +417,7 @@ def _finish(wav: Path, stop: Any) -> dict[str, Any]:
         loss=0.3,
         steps=5,
         stopped_early=False,
+        reference_f0=reference_f0,
     )
     return report
 
@@ -429,3 +433,15 @@ def test_no_finish_runs_rhythm_to_its_end(tmp_path: Path) -> None:
     report = _finish(_wav(tmp_path), StopAfter(10**6))
     assert report["duration_status"] != "stopped"
     assert report["stopped_early"] is False
+
+
+def test_finish_reports_the_pitch_of_the_final_style(tmp_path: Path) -> None:
+    # BuildTTS speaks a 200 Hz tone
+    far = _finish(_wav(tmp_path), StopAfter(10**6), reference_f0=129.0)
+    assert far["pitch_reference_hz"] == 129.0
+    assert far["pitch_voice_hz"] == pytest.approx(200.0, rel=0.03)
+    assert far["pitch_match"] is False
+    near = _finish(_wav(tmp_path), StopAfter(10**6), reference_f0=190.0)
+    assert near["pitch_match"] is True
+    unknown = _finish(_wav(tmp_path), StopAfter(10**6))
+    assert unknown["pitch_reference_hz"] is None and unknown["pitch_match"] is None

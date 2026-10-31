@@ -4,10 +4,11 @@
 # train_style.py is a modified optimize_style.py by Gyeongmin Kim
 # (https://github.com/kdrkdrkdr), MIT License.
 # Adapted: one recording per call, returning the style and a report instead of writing
-# files and printing; the start preset is always the nearest by speaker loss (upstream's
-# `--reference-style auto`); style_dp comes from supertonic.embed's duration inversion
-# instead of staying at the preset's; progress and stop through callbacks; ECAPA is
-# released before the duration stage to save GPU memory.
+# files and printing; the start preset is the nearest by speaker loss (upstream's
+# `--reference-style auto`) among the presets near the reference's pitch; style_dp
+# comes from supertonic.embed's duration inversion instead of staying at the preset's;
+# progress and stop through callbacks; ECAPA is released before the duration stage to
+# save GPU memory.
 """The ``accurate`` method end to end: nearest preset, ECAPA descent, duration inversion."""
 
 from __future__ import annotations
@@ -42,6 +43,7 @@ from supertonic_server.builder.extract.common import (
     load_style,
     nearest_preset,
     preset_path,
+    reference_f0,
 )
 
 logger = logging.getLogger(__name__)
@@ -66,6 +68,8 @@ def extract_style(
     dev = torch.device(device)
     check_readable(wav_path)
     presets = list_presets(model_dir)
+    ref_f0 = reference_f0(wav_path)
+    logger.info("reference median F0: %s", "unclear" if ref_f0 is None else f"{ref_f0:.1f} Hz")
 
     on_progress(progress("loading", "converting Supertonic 3 to PyTorch"))
     tts = load_frozen_tts(
@@ -80,12 +84,17 @@ def extract_style(
     prompts = training_prompts(tts, TRAINING_TEXTS, sizing_dp, cfg.seed)
 
     chosen = nearest_preset(
-        presets, prompts[0], tts, loss_fn, on_progress=on_progress, should_stop=should_stop
+        presets,
+        prompts[0],
+        tts,
+        loss_fn,
+        on_progress=on_progress,
+        should_stop=should_stop,
+        reference_f0=ref_f0,
     )
     if chosen is None:
         raise NothingToSaveError("stopped before any preset was measured; nothing to save")
     path, preset_loss, preset_stopped = chosen
-    logger.info("nearest preset %s at %.4f", path.stem, preset_loss)
     ttl, dp = load_style(path, dev)
 
     timbre = optimise(
@@ -118,6 +127,7 @@ def extract_style(
         loss=loss,
         steps=timbre.taken,
         stopped_early=preset_stopped or timbre.stopped,
+        reference_f0=ref_f0,
         similarity=round(1 - loss, 4),
         best_step=timbre.best_step,
     )

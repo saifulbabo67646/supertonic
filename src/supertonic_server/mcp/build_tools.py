@@ -37,8 +37,22 @@ def _check_files(audio_paths: list[str]) -> list[Path]:
     return paths
 
 
-def _job_view(job: dict[str, Any]) -> dict[str, Any]:
-    return {k: job.get(k) for k in ("state", "progress", "voice_id", "error")}
+def _job_view(job: dict[str, Any], build: dict[str, Any] | None) -> dict[str, Any]:
+    return {**{k: job.get(k) for k in ("state", "progress", "voice_id", "error")}, "build": build}
+
+
+async def _build_of(client: SupertonicClient, job: dict[str, Any]) -> dict[str, Any] | None:
+    """The built voice's ``build`` metadata once the job succeeded (``None`` if it is gone)."""
+    voice_id = job.get("voice_id")
+    if job.get("state") != "succeeded" or not voice_id:
+        return None
+    try:
+        build = (await client.voice(str(voice_id))).get("build")
+    except SupertonicApiError as exc:
+        if exc.code == "voice_not_found":
+            return None
+        raise
+    return build if isinstance(build, dict) else None
 
 
 def register_build_tools(server: MCPServer, client: SupertonicClient) -> None:
@@ -102,14 +116,20 @@ def register_build_tools(server: MCPServer, client: SupertonicClient) -> None:
     async def get_job(job_id: str) -> dict[str, Any]:
         """Get the state of a voice build job.
 
-        Returns ``{state, progress, voice_id, error}``. ``state`` is ``queued``, ``running``,
-        ``succeeded``, ``failed`` or ``cancelled``; ``progress`` is ``{stage, step, total,
-        loss, message, at}`` or null; ``voice_id`` is set once the job succeeded; ``error`` is
-        ``{code, message}`` when it failed, or when a forwarded build was cancelled while its
-        builder could not be reached (``builder_unreachable``: it may still be running there).
+        Returns ``{state, progress, voice_id, error, build}``. ``state`` is ``queued``,
+        ``running``, ``succeeded``, ``failed`` or ``cancelled``; ``progress`` is ``{stage,
+        step, total, loss, message, at}`` or null; ``voice_id`` is set once the job succeeded;
+        ``error`` is ``{code, message}`` when it failed, or when a forwarded build was
+        cancelled while its builder could not be reached (``builder_unreachable``: it may
+        still be running there). ``build`` is null until the job succeeded, then the new
+        voice's build report (``method``, ``similarity``, ``stopped_early``,
+        ``pitch_reference_hz``, ``pitch_voice_hz``, ``pitch_match``, ...). ``pitch_match``
+        false means the voice is clearly higher or lower than the recording: build again from
+        a longer, clearer recording.
         """
         try:
-            return _job_view(await client.job(job_id))
+            job = await client.job(job_id)
+            return _job_view(job, await _build_of(client, job))
         except SupertonicApiError as exc:
             raise fail(exc) from exc
 

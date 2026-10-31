@@ -88,6 +88,12 @@ class SupertonicClient:
         ).json()["data"]
         return data
 
+    async def voice(self, voice_id: str) -> dict[str, Any]:
+        """Return ``GET /v1/voices/{id}``."""
+        resp = await self._request("GET", f"/v1/voices/{_segment(voice_id)}")
+        data: dict[str, Any] = resp.json()
+        return data
+
     async def speech(
         self, text: str, voice: str, language: str, speed: float, response_format: str
     ) -> Speech:
