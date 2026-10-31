@@ -203,13 +203,15 @@ def test_launch_moves_to_a_free_port(
         served.append((settings.port, watcher.url, watcher.open_browser))
         return True
 
-    monkeypatch.setattr(launch, "already_running", lambda host, port, *, open_browser: False)
+    monkeypatch.setattr(launch, "already_running", lambda host, port, *, open_browser, span: False)
     monkeypatch.setattr(cli, "_serve", fake_serve)
     real_choose = launch.choose_port
     monkeypatch.setattr(
         launch,
         "choose_port",
-        lambda host, port: real_choose(host, port, is_free=lambda h, p: p != 8787),
+        lambda host, port, *, span: real_choose(
+            host, port, span=span, is_free=lambda h, p: p != 8787
+        ),
     )
     assert cli._launch(Settings(_env_file=None), open_browser=False) == 0  # type: ignore[call-arg]
     assert served == [(8788, "http://127.0.0.1:8788/", False)]
@@ -221,8 +223,8 @@ def test_launch_moves_to_a_free_port(
 def test_launch_reports_a_failed_start(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr(launch, "already_running", lambda host, port, *, open_browser: False)
-    monkeypatch.setattr(launch, "choose_port", lambda host, port: port)
+    monkeypatch.setattr(launch, "already_running", lambda host, port, *, open_browser, span: False)
+    monkeypatch.setattr(launch, "choose_port", lambda host, port, *, span: port)
     monkeypatch.setattr(cli, "_serve", lambda settings, watcher=None: False)
     assert cli._launch(Settings(_env_file=None), open_browser=False) == 1  # type: ignore[call-arg]
     assert "docs/troubleshooting.md" in capsys.readouterr().out
@@ -231,10 +233,10 @@ def test_launch_reports_a_failed_start(
 def test_launch_when_every_port_is_busy(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    def no_port(host: str, port: int) -> int:
+    def no_port(host: str, port: int, *, span: int) -> int:
         raise launch.NoFreePortError("ports 8787 to 8799 are all in use")
 
-    monkeypatch.setattr(launch, "already_running", lambda host, port, *, open_browser: False)
+    monkeypatch.setattr(launch, "already_running", lambda host, port, *, open_browser, span: False)
     monkeypatch.setattr(launch, "choose_port", no_port)
     assert cli._launch(Settings(_env_file=None), open_browser=False) == 1  # type: ignore[call-arg]
     assert "all in use" in capsys.readouterr().out
@@ -252,16 +254,46 @@ def test_serve_open_starts_a_watcher(monkeypatch: pytest.MonkeyPatch, tmp_path: 
 
 
 def test_launch_command_passes_no_open(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls: list[tuple[int, bool]] = []
+    calls: list[tuple[int, bool, bool]] = []
     monkeypatch.setattr(
         cli,
         "_launch",
-        lambda settings, *, open_browser: calls.append((settings.port, open_browser)) or 0,
+        lambda settings, *, open_browser, explicit: (
+            calls.append((settings.port, open_browser, explicit)) or 0
+        ),
     )
-    with pytest.raises(SystemExit) as exc:
-        cli.main(["launch", "--port", "8792", "--no-open"])
-    assert exc.value.code == 0
-    assert calls == [(8792, False)]
+    for argv in (["launch", "--port", "8792", "--no-open"], ["launch"]):
+        with pytest.raises(SystemExit) as exc:
+            cli.main(argv)
+        assert exc.value.code == 0
+    assert calls == [(8792, False, True), (8787, True, False)]
+
+
+def test_launch_with_an_explicit_port_uses_only_that_port(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``launch --port 8786`` must not reuse a server on 8787 nor move to another port."""
+    probed: list[str] = []
+
+    def probe(url: str, timeout: float = 1.0) -> dict[str, Any] | None:
+        probed.append(url)
+        return HEALTH if ":8787/" in url else None
+
+    monkeypatch.setattr(launch, "probe_health", probe)
+    real_choose = launch.choose_port
+    monkeypatch.setattr(
+        launch,
+        "choose_port",
+        lambda host, port, *, span: real_choose(
+            host, port, span=span, is_free=lambda h, p: p == 8790
+        ),
+    )
+    monkeypatch.setattr(cli, "_serve", lambda *a, **k: pytest.fail("must not start a server"))
+    settings = Settings(_env_file=None, port=8786)  # type: ignore[call-arg]
+    assert cli._launch(settings, open_browser=False, explicit=True) == 1
+    assert probed == ["http://127.0.0.1:8786/"]
+    out = capsys.readouterr().out
+    assert "port 8786 is used by another program" in out and "already running" not in out
 
 
 def test_already_running_finds_a_server_on_a_later_port() -> None:
@@ -304,8 +336,8 @@ def test_launch_reports_a_uvicorn_startup_exit(
     def failing_serve(settings: Settings, watcher: launch.ReadyWatcher | None = None) -> bool:
         raise SystemExit(code)  # what uvicorn does when lifespan startup or the bind fails
 
-    monkeypatch.setattr(launch, "already_running", lambda host, port, *, open_browser: False)
-    monkeypatch.setattr(launch, "choose_port", lambda host, port: port)
+    monkeypatch.setattr(launch, "already_running", lambda host, port, *, open_browser, span: False)
+    monkeypatch.setattr(launch, "choose_port", lambda host, port, *, span: port)
     monkeypatch.setattr(cli, "_serve", failing_serve)
     assert cli._launch(Settings(_env_file=None), open_browser=False) == code  # type: ignore[call-arg]
     out = capsys.readouterr().out

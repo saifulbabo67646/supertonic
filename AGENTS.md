@@ -94,13 +94,22 @@ $p.ProcessId | Set-Content supertonic-server.pid
 
 On Windows the server's messages go to `supertonic-server.err.log` and the request log to
 `supertonic-server.log`. A server started this way does not see environment variables set
-in your shell: put settings in `.env` instead (or, for a one-off variable, start the
-command with `cmd /c set NAME=value&& uv run ...`). Add `--port <port>` after `serve` (on
-every system) to use another port. The log and pid files are ignored by Git.
+in your shell: put settings in `.env` instead, written as plain text with
+`Set-Content .env 'NAME=value' -Encoding ascii` (several lines: `'A=1','B=2'`). Do not use
+`>` or `Out-File`: in Windows PowerShell 5.1 they write UTF-16, which the server cannot
+read. For a one-off variable, set it in `$cmd` itself, with no space before `&&`:
+
+```powershell
+$cmd = 'cmd /c set SUPERTONIC_PORT=8790&& uv run supertonic-server serve > supertonic-server.log 2> supertonic-server.err.log'
+```
+
+Add `--port <port>` after `serve` (on every system) to use another port. The log and pid
+files are ignored by Git.
 
 Voices you make are stored in `~/.supertonic-server` (`%USERPROFILE%\.supertonic-server` on
-Windows) and the model in the Hugging Face cache; `SUPERTONIC_DATA_DIR` and
-`SUPERTONIC_MODEL_DIR` move them ([configuration](docs/configuration.md)).
+Windows) and the model in `~/.cache/supertonic3` (`%USERPROFILE%\.cache\supertonic3`);
+`SUPERTONIC_DATA_DIR` and `SUPERTONIC_MODEL_DIR` move them
+([configuration](docs/configuration.md)).
 
 Wait until it answers. The first start downloads the model, which can take several minutes
 on a slow connection; later starts take a few seconds. These loops wait up to 10 minutes
@@ -135,7 +144,7 @@ Linux) do all of the above in a window and open the Studio; closing the window s
 server. In a terminal the same is `uv run supertonic-server launch`: if a server is
 already running it prints its URL, opens it and exits; otherwise it picks a free port from
 8787 to 8799, starts, and opens the browser once the server is ready (`--no-open` to skip
-that). A server it starts runs in the foreground until stopped, so an agent should only use
+that; `--port <port>` checks and uses only that port). A server it starts runs in the foreground until stopped, so an agent should only use
 the launchers when the user wants that window.
 
 ## 5. Verify

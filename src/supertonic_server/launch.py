@@ -5,7 +5,8 @@ dependencies are installed, then run this. It owns the parts that would otherwis
 written three times in three shells:
 
 * if a Supertonic server already answers on the preferred port, open the Studio and exit;
-* otherwise pick a free port (the preferred one, else the next free one up to 12 above it);
+* otherwise pick a free port (the preferred one, else the next free one up to 12 above it;
+  with ``--port`` only that one);
 * start the server and, once ``/v1/health`` answers, open the Studio in the browser.
 
 Every message here is read by people who may never have used a terminal: keep it plain.

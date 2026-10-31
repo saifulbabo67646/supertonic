@@ -220,9 +220,14 @@ sentences.
 - Close microphone, little room echo, natural reading voice. The voice copies what it
   hears, including noise and room colour.
 - To try the builder before you have a recording, use a built-in voice as the reference:
-  `curl -s http://127.0.0.1:8787/v1/audio/speech -H 'Content-Type: application/json' -d
-  '{"input":"<a paragraph of about 40 seconds>","voice":"Hugo","response_format":"wav"}'
-  -o reference.wav`.
+
+  ```bash
+  curl -s http://127.0.0.1:8787/v1/audio/speech \
+    -H 'Content-Type: application/json' \
+    -d '{"input":"<a paragraph of about 40 seconds>","voice":"Hugo","response_format":"wav"}' \
+    -o reference.wav
+  ```
+
 - Recordings that are mostly silence are rejected (`invalid_reference_audio` with the
   reason), as are files that are not audio.
 
@@ -241,7 +246,7 @@ sentences.
 | Self-test says `"cuda": false` | Driver too old or missing (`nvidia-smi` must work), or a CPU-only PyTorch was installed. Re-run `uv sync --extra builder`; on Windows and Linux it pulls the CUDA 12.6 wheels. |
 | First build sits in `loading` for minutes | First-run downloads (Supertonic 3, WavLM-Large about 1.2 GB, ECAPA about 80 MB). Run the setup script or `python -m supertonic_server.builder.extract.prefetch` beforehand. |
 | Job fails `out_of_memory` | Not enough free VRAM. Close other GPU programs (games, browsers with hardware acceleration, other ML jobs) and retry; `accurate` needs about 2.7 GB, `fast` about 3.8 GB. |
-| `.env` or JSON written from PowerShell is not read correctly | Windows PowerShell 5.1 writes UTF-8 **with a byte-order mark** (`Out-File`, `Set-Content -Encoding utf8`). Write such files with an editor, from Python, or with `[IO.File]::WriteAllText($path, $text, (New-Object Text.UTF8Encoding $false))`. |
+| `.env` or JSON written from PowerShell is not read correctly | In Windows PowerShell 5.1, `>` and `Out-File` write UTF-16, which the server cannot read, and `-Encoding utf8` adds a byte-order mark (fine for `.env`, which the server reads as UTF-8 with or without one, but not for JSON files). Write `.env` with `Set-Content .env 'NAME=value' -Encoding ascii`; write other files with an editor, from Python, or with `[IO.File]::WriteAllText($path, $text, (New-Object Text.UTF8Encoding $false))`. |
 | `UnicodeEncodeError` / `charmap` codec errors in logs on Windows | The console uses cp1252. The server starts the worker with `PYTHONUTF8=1`; set it yourself (`$env:PYTHONUTF8 = '1'`) when running the worker or scripts by hand. |
 | `torchaudio` complains about missing FFmpeg DLLs on Windows | torchaudio 2.9 needs FFmpeg *shared* libraries to load audio files. The builder never calls `torchaudio.load` (it decodes with soundfile and the bundled ffmpeg), so this only affects your own scripts. |
 | Forwarding machine: `503 builder_unavailable` | The builder URL is wrong, the builder is not running, the key does not match, the firewall blocks the port or the SSH tunnel is down. `curl -H "Authorization: Bearer <key>" <builder-url>/v1/health` from the forwarding machine must show `"builder":"local"`. |

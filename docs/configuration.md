@@ -12,7 +12,7 @@ working directory; copy [`.env.example`](../.env.example) to start.
 | `SUPERTONIC_ALLOWED_HOSTS` | unset | Without an API key: extra `Host` names to accept besides `localhost`, `127.0.0.1`, `[::1]` and the bind host (comma-separated). |
 | `SUPERTONIC_ALLOWED_ORIGINS` | unset | Without an API key: extra browser origins (for example `http://localhost:3000`) whose pages may call the server, besides its own (comma-separated). |
 | `SUPERTONIC_DATA_DIR` | `~/.supertonic-server` | Custom voices and previews (`~` is expanded). |
-| `SUPERTONIC_MODEL_DIR` | unset | Local model weights; unset downloads to the Hugging Face cache. |
+| `SUPERTONIC_MODEL_DIR` | unset | Local model weights; unset downloads them once from Hugging Face to `~/.cache/supertonic3` (`%USERPROFILE%\.cache\supertonic3` on Windows). |
 | `SUPERTONIC_WORKERS` | `0` | Synthesis workers. `0` means `min(4, max(1, cpu_count // 2))`. |
 | `SUPERTONIC_INTRA_OP_THREADS` | unset | ONNX threads per worker (at least 1). Unset means `ceil(cpu_count / workers)`. |
 | `SUPERTONIC_MAX_QUEUE` | `64` | Waiting synthesis jobs before the server answers 503 (at least 1). Realtime work has its own allowance of the same size, so REST traffic cannot crowd it out. |

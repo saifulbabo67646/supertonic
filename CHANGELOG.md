@@ -60,6 +60,16 @@ All notable changes to this project are documented here. The format is based on
   `"Mia"` always means `F1` (a voice saved earlier with the id `mia` still answers to
   exactly `mia`). A new voice called "Mia." gets the id `mia-2`, not `mia`. The Studio's
   `?voice=` link follows the same order.
+- `.env` is read as UTF-8 with or without a byte-order mark, so a file saved from Windows
+  PowerShell 5.1 no longer loses its first setting without a word. AGENTS.md shows how to
+  write `.env` there (`Set-Content ... -Encoding ascii`) and the full background start
+  line with a one-off variable.
+- `supertonic-server launch --port <port>` uses only that port: it no longer reuses a
+  server on a nearby port or moves to another free one. Without `--port` it still picks
+  from 8787 to 8799.
+- The macOS and Linux launchers run `scripts/launch.sh` with bash, so they still work if
+  that file lost its executable mark.
+- The docs say where the model is stored: `~/.cache/supertonic3`.
 - `scripts/serve.sh` and `scripts/serve.ps1` no longer uninstall the voice builder extra
   (`uv sync --inexact`).
 - CONTRIBUTING's start command (`uv run supertonic-server serve`).

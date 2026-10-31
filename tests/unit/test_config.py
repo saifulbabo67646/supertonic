@@ -99,6 +99,19 @@ def test_dotenv_in_cwd_does_not_leak_into_tests(
     assert (s.port, s.api_key) == (8787, None)
 
 
+@pytest.mark.parametrize("bom", [b"", b"\xef\xbb\xbf"], ids=["utf-8", "utf-8-with-bom"])
+def test_dotenv_is_read_with_or_without_a_byte_order_mark(tmp_path: Path, bom: bytes) -> None:
+    """Windows PowerShell 5.1 writes UTF-8 with a BOM; the first line must still count.
+
+    The encoding is set explicitly: the default, the locale's, is cp1252 on Windows.
+    """
+    assert Settings.model_config["env_file_encoding"] == "utf-8-sig"
+    env = tmp_path / ".env"
+    env.write_bytes(bom + "SUPERTONIC_PORT=1234\nSUPERTONIC_DEFAULT_VOICE=Mia é\n".encode())
+    s = Settings(_env_file=env)  # type: ignore[call-arg]
+    assert (s.port, s.default_voice) == (1234, "Mia é")
+
+
 def test_builder_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     from pydantic import ValidationError
 

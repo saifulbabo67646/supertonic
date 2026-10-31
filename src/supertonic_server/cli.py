@@ -58,14 +58,25 @@ def _serve(settings: Settings, watcher: launch.ReadyWatcher | None = None) -> bo
     return bool(server.started)
 
 
-def _launch(settings: Settings, *, open_browser: bool) -> int:
-    """Open a running Studio, or pick a port, start the server and open the Studio."""
-    if launch.already_running(settings.host, settings.port, open_browser=open_browser):
+def _launch(settings: Settings, *, open_browser: bool, explicit: bool = False) -> int:
+    """Open a running Studio, or pick a port, start the server and open the Studio.
+
+    With ``explicit`` (``--port`` given) only that port is used: no other running server is
+    reused and no other free port is picked.
+    """
+    span = 1 if explicit else launch.PORT_SPAN
+    if launch.already_running(settings.host, settings.port, open_browser=open_browser, span=span):
         return 0
     try:
-        port = launch.choose_port(settings.host, settings.port)
+        port = launch.choose_port(settings.host, settings.port, span=span)
     except launch.NoFreePortError as exc:
-        launch.fail(f"{exc}. Close the program using them, or set SUPERTONIC_PORT.")
+        if explicit:
+            launch.fail(
+                f"port {settings.port} is used by another program. Choose another --port, "
+                "or leave it out to let Supertonic pick a free one."
+            )
+        else:
+            launch.fail(f"{exc}. Close the program using them, or set SUPERTONIC_PORT.")
         return 1
     if port != settings.port:
         launch.say(f"Port {settings.port} is used by another program, so Supertonic uses {port}.")
@@ -105,7 +116,11 @@ def main(argv: Sequence[str] | None = None) -> None:
         "launch",
         help="start for desktop use: reuse a running server or pick a free port, open the Studio",
     )
-    start.add_argument("--port", type=int, help="preferred port (default: SUPERTONIC_PORT or 8787)")
+    start.add_argument(
+        "--port",
+        type=int,
+        help="use only this port (default: SUPERTONIC_PORT or 8787, else the next free one)",
+    )
     start.add_argument("--no-open", action="store_true", help="do not open the browser")
     probe = sub.add_parser(
         "check", help="smoke-test a running server: health, a speech file and word timestamps"
@@ -129,7 +144,8 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     if args.command == "launch":
         settings = _settings({"port": args.port} if args.port is not None else {})
-        raise SystemExit(_launch(settings, open_browser=not args.no_open))
+        explicit = args.port is not None
+        raise SystemExit(_launch(settings, open_browser=not args.no_open, explicit=explicit))
 
     overrides = {k: v for k, v in (("host", args.host), ("port", args.port)) if v is not None}
     settings = _settings(overrides)

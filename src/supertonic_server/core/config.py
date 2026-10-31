@@ -20,7 +20,11 @@ class ConfigError(Exception):
 class Settings(BaseSettings):
     """Runtime configuration, read from ``SUPERTONIC_*`` environment variables or ``.env``."""
 
-    model_config = SettingsConfigDict(env_prefix="SUPERTONIC_", env_file=".env", extra="ignore")
+    # utf-8-sig reads plain UTF-8 too, and drops the byte-order mark Windows PowerShell 5.1
+    # writes; without it the first setting in such a file is silently ignored.
+    model_config = SettingsConfigDict(
+        env_prefix="SUPERTONIC_", env_file=".env", env_file_encoding="utf-8-sig", extra="ignore"
+    )
 
     host: str = "127.0.0.1"
     port: int = Field(8787, ge=1, le=65535)
