@@ -1,14 +1,45 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [project]
 name = "supertonic-server"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Self-hosted, OpenAI-compatible Supertonic 3 text-to-speech server"
 readme = "README.md"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
+authors = [{ name = "Supertonic Server contributors" }]
 requires-python = ">=3.11"
+keywords = [
+  "tts",
+  "text-to-speech",
+  "speech-synthesis",
+  "supertonic",
+  "openai-compatible",
+  "fastapi",
+  "onnx",
+  "websocket",
+  "mcp",
+  "voice-cloning",
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Web Environment",
+  "Framework :: FastAPI",
+  "Intended Audience :: Developers",
+  "Operating System :: MacOS",
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Multimedia :: Sound/Audio :: Speech",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Typing :: Typed",
+]
 dependencies = [
   "supertonic==1.3.1",
   "fastapi",
@@ -39,6 +70,13 @@ builder = [
   "speechbrain",
 ]
 
+[project.urls]
+Homepage = "https://github.com/saifulbabo67646/supertonic"
+Repository = "https://github.com/saifulbabo67646/supertonic"
+Issues = "https://github.com/saifulbabo67646/supertonic/issues"
+Documentation = "https://github.com/saifulbabo67646/supertonic/tree/main/docs"
+Changelog = "https://github.com/saifulbabo67646/supertonic/blob/main/CHANGELOG.md"
+
 [project.scripts]
 supertonic-server = "supertonic_server.cli:main"
 supertonic-mcp = "supertonic_server.mcp.server:main"
@@ -60,8 +98,14 @@ name = "pytorch-cu126"
 url = "https://download.pytorch.org/whl/cu126"
 explicit = true
 
+[tool.hatch.version]
+path = "src/supertonic_server/__init__.py"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/supertonic_server"]
+
+[tool.hatch.build.targets.sdist]
+exclude = ["/.github", "/docs/superpowers", "/.superpowers"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
