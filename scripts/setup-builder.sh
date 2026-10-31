@@ -57,7 +57,7 @@ cat <<MSG
 
 == Done. The voice builder is installed on this computer.
 
-   Start the server again (scripts/serve.sh, or as in AGENTS.md step 4).
+   Start (or restart) the server (scripts/serve.sh, or as in AGENTS.md step 4).
    GET /v1/health then shows "builder":"local". Nothing else needs to change here.
 
 == Only if another computer should send its voice builds here:

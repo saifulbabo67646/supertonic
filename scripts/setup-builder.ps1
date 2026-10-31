@@ -64,7 +64,7 @@ $rule = "New-NetFirewallRule -DisplayName `"Supertonic`" -Direction Inbound -Pro
 Write-Host ''
 Write-Host '== Done. The voice builder is installed on this computer.'
 Write-Host ''
-Write-Host '   Start the server again (scripts\serve.ps1, or as in AGENTS.md step 4).'
+Write-Host '   Start (or restart) the server (scripts\serve.ps1, or as in AGENTS.md step 4).'
 Write-Host '   GET /v1/health then shows "builder":"local". Nothing else needs to change here.'
 Write-Host ''
 Write-Host '== Only if another computer should send its voice builds here:'
