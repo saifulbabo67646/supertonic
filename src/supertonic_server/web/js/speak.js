@@ -5,7 +5,7 @@ import { finalizeWav, ObjectUrlSlot, playPreview } from "./audio.js";
 import { getLanguages, getVoices, onVoicesChanged } from "./catalog.js";
 import { fileStamp, h, replace } from "./dom.js";
 import { renderHistory } from "./history.js";
-import { buildControls, fillTags, fillVoices } from "./speak-controls.js";
+import { buildControls, fillTags, fillVoices, showVoiceHint } from "./speak-controls.js";
 import { addHistory, getHistory } from "./store.js";
 
 const MAX_CHARS = 100_000;
@@ -48,6 +48,7 @@ function applySettings(entry) {
   }
   const found = listed();
   if (found) ui.voice.value = entry.voice;
+  showVoiceHint(ui);
   if (entry.language) ui.language.value = entry.language;
   if (entry.speed) ui.speed.value = entry.speed;
   if (entry.steps) ui.steps.value = entry.steps;
@@ -231,10 +232,18 @@ async function load() {
 let pendingParams = null;
 function applyParams() {
   const voice = pendingParams?.get("voice");
-  if (voice && allVoices.some((v) => v.id === voice)) {
+  // `?voice=` takes an id or a name, like the API (exact id first, then case-insensitive).
+  const wanted =
+    voice &&
+    (allVoices.find((v) => v.id === voice) ??
+      allVoices.find((v) => v.id.toLowerCase() === voice.toLowerCase()) ??
+      allVoices.find((v) => v.kind === "preset" && v.name.toLowerCase() === voice.toLowerCase()) ??
+      allVoices.find((v) => v.name.toLowerCase() === voice.toLowerCase()));
+  if (wanted) {
     ui.tag.value = "";
     fillVoices(ui, allVoices);
-    ui.voice.value = voice;
+    ui.voice.value = wanted.id;
+    showVoiceHint(ui);
   }
   const language = pendingParams?.get("language");
   if (language && languages.some((l) => l.code === language)) ui.language.value = language;
@@ -243,7 +252,7 @@ function applyParams() {
   pendingParams = null;
 }
 
-/** Called on every visit; `?voice=<id>&language=<code>` preselect a voice and language. */
+/** Called on every visit; `?voice=<id or name>&language=<code>` preselect a voice and language. */
 export function show(params) {
   pendingParams = params;
   if (allVoices.length) applyParams();

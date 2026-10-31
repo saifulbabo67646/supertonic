@@ -285,7 +285,8 @@ legend {
   grid-template-columns: 1fr auto;
   align-items: end;
 }
-.field.with-action label {
+.field.with-action label,
+.field.with-action .hint {
   grid-column: 1 / -1;
 }
 input[type="text"],

@@ -47,8 +47,7 @@ export function getHealth() {
   return healthPromise;
 }
 
-/** Label shown for a voice in pickers. */
+/** Label shown for a voice in pickers, e.g. "Mia · F1". */
 export function voiceLabel(voice) {
-  const gender = voice.gender ? `, ${voice.gender}` : "";
-  return voice.name === voice.id ? `${voice.id}${gender}` : `${voice.name} (${voice.id})`;
+  return voice.name === voice.id ? voice.id : `${voice.name} · ${voice.id}`;
 }

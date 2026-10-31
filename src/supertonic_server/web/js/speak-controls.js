@@ -27,7 +27,10 @@ export function buildControls(ui) {
   );
   const voiceField = field("Voice", ui.voice);
   voiceField.classList.add("with-action");
-  voiceField.append(ui.preview);
+  ui.voiceHint = h("p", { class: "hint", id: `${ui.voice.id}-hint`, "aria-live": "polite" });
+  ui.voice.setAttribute("aria-describedby", ui.voiceHint.id);
+  voiceField.append(ui.preview, ui.voiceHint);
+  ui.voice.addEventListener("change", () => showVoiceHint(ui));
   ui.language = h("select");
   ui.speed = h("input", {
     type: "range",
@@ -100,12 +103,21 @@ export function fillVoices(ui, allVoices) {
         h(
           "optgroup",
           { label },
-          list.map((v) => h("option", { value: v.id, text: voiceLabel(v) })),
+          list.map((v) =>
+            h("option", { value: v.id, text: voiceLabel(v), title: v.description || "" }),
+          ),
         ),
       ),
   );
   if (shown.some((v) => v.id === current)) ui.voice.value = current;
   ui.preview.disabled = shown.length === 0;
+  showVoiceHint(ui);
+}
+
+/** Show the selected voice's description under the picker (empty when it has none). */
+export function showVoiceHint(ui) {
+  const option = ui.voice.selectedOptions[0];
+  ui.voiceHint.textContent = option ? option.title : "";
 }
 
 /** Fill the tag filter from all voices' tags; hidden when no voice has tags. */
