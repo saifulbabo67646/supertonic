@@ -18,6 +18,12 @@ const POLL_MS = 2000;
 const MAX_BACKOFF_MS = 30_000;
 /** Timbre samples kept for the ETA: a sliding window, so speed changes show up. */
 const ETA_WINDOW = 20;
+/** The heading above a build; queued and running builds show "Step 4 · Building". */
+const STEP_HEADINGS = {
+  succeeded: "Step 5 · Try your voice",
+  failed: "The build did not work",
+  cancelled: "The build was cancelled",
+};
 
 const parseTime = (iso) => (iso ? Date.parse(iso) : NaN);
 
@@ -163,7 +169,7 @@ export function createJobView(onChange) {
     meta.textContent = [METHOD_NAMES[job.request.method] || job.request.method, place]
       .filter(Boolean)
       .join(", ");
-    step.textContent = job.state === "succeeded" ? "Step 5 · Try your voice" : "Step 4 · Building";
+    step.textContent = STEP_HEADINGS[job.state] || "Step 4 · Building";
     let stageText = "";
     if (job.state === "queued") {
       stageText = "Waiting to start. It begins as soon as the voice builder is free…";
@@ -193,7 +199,9 @@ export function createJobView(onChange) {
     const secs = estimateSecondsLeft(samples, p?.total);
     left.hidden = !timbre;
     left.value.textContent = secs === null ? "estimating…" : `about ${duration(secs)}`;
-    const likeness = job.request.method === "accurate" && p && typeof p.loss === "number";
+    // Only the timbre stage's loss is the likeness; the preset scan reports one per preset.
+    const likeness =
+      job.request.method === "accurate" && p?.stage === "timbre" && typeof p.loss === "number";
     loss.hidden = !(active && likeness);
     if (likeness) loss.value.textContent = `${(1 - p.loss).toFixed(3)} (1 is a perfect match)`;
     tickElapsed();

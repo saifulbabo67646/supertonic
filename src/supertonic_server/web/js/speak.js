@@ -241,7 +241,7 @@ async function load() {
     replace(
       ui.welcome,
       welcomeCard(counts, () => {
-        useSample();
+        if (!ui.text.value.trim()) useSample();
         generate();
       }),
     );

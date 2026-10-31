@@ -67,10 +67,11 @@ export function buildVoiceForm(onQueued) {
     methodHint,
   );
 
+  const tips = buildTips();
   const form = h(
     "form",
     { class: "build-form", novalidate: true },
-    step(1, "step-recording", "Record or upload the voice", buildTips(), clips.el),
+    step(1, "step-recording", "Record or upload the voice", tips.el, clips.el),
     step(
       2,
       "step-details",
@@ -153,6 +154,7 @@ export function buildVoiceForm(onQueued) {
     try {
       const job = await api.buildVoice(data);
       form.reset();
+      tips.show();
       clips.reset();
       applyMethods();
       onQueued(job);

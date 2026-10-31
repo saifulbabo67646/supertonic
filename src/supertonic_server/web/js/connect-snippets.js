@@ -36,7 +36,7 @@ export function snippets(origin, voice, auth) {
       },
     },
   };
-  const claudeKey = auth ? `  --env SUPERTONIC_API_KEY=${KEY_PLACEHOLDER} \\\n` : "";
+  const claudeKey = auth ? ` --env SUPERTONIC_API_KEY=${KEY_PLACEHOLDER}` : "";
   const replaceDir = `Replace ${DIR_PLACEHOLDER} with the folder you put Supertonic in.`;
   const main = [
     {
@@ -62,11 +62,11 @@ export function snippets(origin, voice, auth) {
       note:
         `Run this once in a terminal so Claude Code can speak with your voices. ${replaceDir} ` +
         `Then ask Claude, for example: “Say hello with the ${voice} voice.”`,
+      // One line: `\` line breaks fail in Windows PowerShell and cmd.
       code:
-        `claude mcp add supertonic \\\n` +
-        `  --env SUPERTONIC_BASE_URL=${origin} \\\n` +
+        `claude mcp add supertonic --scope user --env SUPERTONIC_BASE_URL=${origin}` +
         claudeKey +
-        `  -- uv --directory ${DIR_PLACEHOLDER} run supertonic-mcp`,
+        ` -- uv --directory ${DIR_PLACEHOLDER} run supertonic-mcp`,
     },
     {
       id: "mcp",

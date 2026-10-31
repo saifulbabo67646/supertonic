@@ -49,7 +49,10 @@ function recordingProblem(message) {
 }
 
 /** Messages by API error code. */
+const BUSY = "Supertonic is busy right now. Wait a moment and try again.";
+
 const BY_CODE = {
+  server_busy: () => BUSY,
   not_ready: () => "Supertonic is still starting up. Wait a few seconds and try again.",
   voice_not_found: () => "That voice no longer exists. Pick another voice.",
   ambiguous_voice: () =>
@@ -89,9 +92,7 @@ export function friendlyError(err) {
   if (status === 401) {
     return "This server needs an access key. Enter it on the Connect page, then try again.";
   }
-  if (status === 429 || /busy|queue is full/i.test(message)) {
-    return "Supertonic is busy right now. Wait a moment and try again.";
-  }
+  if (status === 429) return BUSY;
   if (status >= 500) {
     return (
       "Something went wrong inside Supertonic. Try again; if it keeps happening, restart " +

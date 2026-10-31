@@ -29,7 +29,7 @@ export function buildControls(ui) {
   );
   const voiceField = field("Voice", ui.voice);
   voiceField.classList.add("with-action");
-  ui.voiceHint = h("p", { class: "hint", id: `${ui.voice.id}-hint`, "aria-live": "polite" });
+  ui.voiceHint = h("p", { class: "hint", id: "voice-hint", "aria-live": "polite" });
   ui.voice.setAttribute("aria-describedby", ui.voiceHint.id);
   voiceField.append(ui.preview, ui.voiceHint);
   ui.voice.addEventListener("change", () => showVoiceHint(ui));
@@ -43,7 +43,11 @@ export function buildControls(ui) {
   });
   ui.speedOut = h("output", { class: "range-value" });
   ui.speedOut.value = DEFAULT_SPEED.toFixed(2);
-  const speedField = field("Speed", ui.speed, "1.00 is normal. Move left to slow down, right to speed up.");
+  const speedField = field(
+    "Speed",
+    ui.speed,
+    `Starts at ${DEFAULT_SPEED.toFixed(2)}. Move left to slow down, right to speed up.`,
+  );
   speedField.querySelector("label").append(ui.speedOut);
   ui.steps = h("input", {
     type: "number",

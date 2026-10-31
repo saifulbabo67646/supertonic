@@ -69,6 +69,13 @@ All notable changes to this project are documented here. The format is based on
   from 8787 to 8799.
 - The macOS and Linux launchers run `scripts/launch.sh` with bash, so they still work if
   that file lost its executable mark.
+- Studio: the Claude Code command on the Connect page is one line with `--scope user`, so
+  it pastes into Windows PowerShell and cmd too; the Connect page also says how to stop a
+  server started in the background. After a build, the reading-text picker goes back to
+  English with its passage; failed and cancelled builds get their own heading; Likeness
+  only shows during the timbre stage. The speed hint says the slider starts at 1.05.
+  "Try a sample" keeps text you already typed. A full queue (`server_busy`) says
+  Supertonic is busy, and other messages that merely contain "busy" are shown as they are.
 - The docs say where the model is stored: `~/.cache/supertonic3`.
 - `scripts/serve.sh` and `scripts/serve.ps1` no longer uninstall the voice builder extra
   (`uv sync --inexact`).

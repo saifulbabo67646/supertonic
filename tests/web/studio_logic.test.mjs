@@ -50,6 +50,15 @@ test("server errors keep the details after a plain sentence", () => {
 
 test("other client errors pass the server message through", () => {
   assert.equal(friendlyError({ status: 400, code: "invalid_request", message: "x" }), "x");
+  // A message that merely mentions "busy" is not a busy server.
+  const text = "Voice 'Busy Bee' not found";
+  assert.equal(friendlyError({ status: 400, code: "invalid_request", message: text }), text);
+});
+
+test("a full queue says Supertonic is busy", () => {
+  for (const err of [{ status: 503, code: "server_busy", message: "q" }, { status: 429 }]) {
+    assert.match(friendlyError(err), /^Supertonic is busy right now\./);
+  }
 });
 
 test("failed builds explain what happened", () => {
@@ -73,9 +82,11 @@ test("snippets without a key never mention one", () => {
   assert.match(openai.code, /base_url="http:\/\/127\.0\.0\.1:8787\/v1"/);
   assert.match(openai.code, /voice="Mia"/);
   const claude = main.find((s) => s.id === "claude-code");
-  assert.match(claude.code, /^claude mcp add supertonic \\/);
-  assert.match(claude.code, /--env SUPERTONIC_BASE_URL=http:\/\/127\.0\.0\.1:8787 \\/);
-  assert.ok(claude.code.endsWith(`-- uv --directory ${DIR_PLACEHOLDER} run supertonic-mcp`));
+  assert.equal(
+    claude.code,
+    "claude mcp add supertonic --scope user --env SUPERTONIC_BASE_URL=http://127.0.0.1:8787 " +
+      `-- uv --directory ${DIR_PLACEHOLDER} run supertonic-mcp`,
+  );
   const mcp = JSON.parse(main.find((s) => s.id === "mcp").code);
   assert.deepEqual(mcp.mcpServers.supertonic.args, [
     "--directory",
@@ -89,7 +100,8 @@ test("snippets without a key never mention one", () => {
 test("snippets with a key use the placeholder everywhere", () => {
   const { main, more } = snippets("https://tts.example.com", "Hugo", true);
   const claude = main.find((s) => s.id === "claude-code");
-  assert.match(claude.code, new RegExp(`--env SUPERTONIC_API_KEY=${KEY_PLACEHOLDER}`));
+  assert.match(claude.code, new RegExp(`--env SUPERTONIC_API_KEY=${KEY_PLACEHOLDER} -- uv `));
+  assert.ok(!claude.code.includes("\n"), "one line, so it pastes into any shell");
   const mcp = JSON.parse(main.find((s) => s.id === "mcp").code);
   assert.equal(mcp.mcpServers.supertonic.env.SUPERTONIC_API_KEY, KEY_PLACEHOLDER);
   const ws = more.find((s) => s.id === "ws");

@@ -123,6 +123,11 @@ export function mount(root) {
             "Supertonic runs in the window that opened when you started it. To stop it, close " +
             "that window (or press Ctrl+C in it). To start it again, open Start Supertonic again.",
         }),
+        h("p", {
+          text:
+            "If an AI assistant or a terminal command started it in the background, there is " +
+            "no window: ask the assistant to stop it, or see “Stop the server” in AGENTS.md.",
+        }),
       ),
     ),
     ui.status,

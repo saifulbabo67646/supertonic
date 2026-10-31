@@ -11,7 +11,10 @@ export const TIPS = [
   "Talk naturally for 30 to 60 seconds. Reading the text below works well.",
 ];
 
-/** Build the tips box; the passage language starts as English and follows the picker. */
+/**
+ * Build the tips box; the passage language starts as English and follows the picker.
+ * Returns `{ el, show }`: call `show()` after resetting the form so the passage matches again.
+ */
 export function buildTips() {
   const select = h("select", { class: "compact" });
   const passage = h("blockquote", { class: "reading-text", lang: "en" });
@@ -35,7 +38,8 @@ export function buildTips() {
       names = Object.fromEntries(usable.map((l) => [l.code, l.name]));
       replace(
         select,
-        usable.map((l) => h("option", { value: l.code, text: l.name })),
+        // "en" is the default option, so a form reset goes back to it.
+        usable.map((l) => h("option", { value: l.code, text: l.name, selected: l.code === "en" })),
       );
       select.value = "en";
       show();
@@ -47,7 +51,7 @@ export function buildTips() {
   select.addEventListener("change", show);
   show();
 
-  return h(
+  const el = h(
     "aside",
     { class: "tips", "aria-labelledby": "tips-title" },
     h("h3", { id: "tips-title", text: "Tips for a good recording" }),
@@ -60,4 +64,5 @@ export function buildTips() {
     passage,
     note,
   );
+  return { el, show };
 }
