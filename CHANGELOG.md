@@ -55,6 +55,11 @@ All notable changes to this project are documented here. The format is based on
 
 ### Fixed
 
+- A custom voice can no longer take over a built-in name: lookups now try the exact id,
+  then the built-in name, then the id in any capitalisation, then the custom voice name, so
+  `"Mia"` always means `F1` (a voice saved earlier with the id `mia` still answers to
+  exactly `mia`). A new voice called "Mia." gets the id `mia-2`, not `mia`. The Studio's
+  `?voice=` link follows the same order.
 - `scripts/serve.sh` and `scripts/serve.ps1` no longer uninstall the voice builder extra
   (`uv sync --inexact`).
 - CONTRIBUTING's start command (`uv run supertonic-server serve`).

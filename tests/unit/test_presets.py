@@ -71,6 +71,36 @@ def test_preset_name_beats_an_older_custom_voice_with_that_name(lib: VoiceLibrar
     assert e.value.code == "voice_name_taken"
 
 
+def _legacy_voice(lib: VoiceLibrary, vid: str, name: str) -> VoiceLibrary:
+    folder = lib.custom_dir / vid
+    folder.mkdir(parents=True)
+    (folder / "style.json").write_text(json.dumps(make_style()), encoding="utf-8")
+    meta = {"id": vid, "name": name, "kind": "custom", "created_at": "2026-01-01"}
+    (folder / "voice.json").write_text(json.dumps(meta), encoding="utf-8")
+    return VoiceLibrary(lib.presets_dir, lib.custom_dir)
+
+
+def test_built_in_name_beats_a_legacy_folder_named_like_it(lib: VoiceLibrary) -> None:
+    lib = _legacy_voice(lib, "mia", "Mia")
+    assert lib.resolve("Mia").id == "F1" and lib.resolve("MIA").id == "F1"
+    assert lib.resolve("mia").id == "mia"  # the exact id still reaches the old voice
+    # and it can still be edited and deleted by that id
+    assert lib.update("mia", description="old").description == "old"
+    lib.delete("mia")
+    assert [v.id for v in lib.list()] == ["F1", "M1"]
+
+
+def test_id_in_any_capitalisation_still_resolves(lib: VoiceLibrary) -> None:
+    lib = _legacy_voice(lib, "old-mia", "Old")
+    assert lib.resolve("OLD-MIA").id == "old-mia"
+
+
+def test_import_never_takes_a_built_in_name_as_id(lib: VoiceLibrary) -> None:
+    voice = lib.import_style(make_style(), name="Mia.")
+    assert voice.id == "mia-2" and voice.name == "Mia."
+    assert lib.resolve("Mia").id == "F1" and lib.resolve("Mia.").id == "mia-2"
+
+
 @pytest.mark.parametrize("name", ["Mia", "hugo", "F1", " m1 "])
 def test_import_with_preset_name_rejected(lib: VoiceLibrary, name: str) -> None:
     with pytest.raises(ApiError) as e:

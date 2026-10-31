@@ -48,9 +48,10 @@ default settings; other languages and speeds will differ. Re-run with
 
 Built-in names are reserved: a custom voice cannot be imported, built or renamed to a
 built-in voice's name or id (any capitalisation). The server answers
-`409 voice_name_taken`. When a voice is looked up, the order is: exact id, id in any
-capitalisation, built-in name, then custom voice name. A custom voice saved before names
-existed that is called, say, "Mia" keeps working by its own id; the name "Mia" now means
-`F1`.
+`409 voice_name_taken`. When a voice is looked up, the order is: exact id, built-in name,
+id in any capitalisation, then custom voice name. A custom voice saved before names
+existed that is called, say, "Mia" (id `mia`) keeps working by its exact id `mia`; the
+name "Mia" in any other spelling now means `F1`. A new custom voice never gets a built-in
+name as its id: one called "Mia." gets the id `mia-2`.
 
 Names and descriptions live in one place, `src/supertonic_server/voices/presets.py`.

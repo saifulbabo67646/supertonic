@@ -254,13 +254,15 @@ async function load() {
 let pendingParams = null;
 function applyParams() {
   const voice = pendingParams?.get("voice");
-  // `?voice=` takes an id or a name, like the API (exact id first, then case-insensitive).
+  // `?voice=` takes an id or a name, in the API's order: exact id, built-in name, id in any
+  // capitalisation, then custom voice name.
+  const low = voice?.toLowerCase();
   const wanted =
     voice &&
     (allVoices.find((v) => v.id === voice) ??
-      allVoices.find((v) => v.id.toLowerCase() === voice.toLowerCase()) ??
-      allVoices.find((v) => v.kind === "preset" && v.name.toLowerCase() === voice.toLowerCase()) ??
-      allVoices.find((v) => v.name.toLowerCase() === voice.toLowerCase()));
+      allVoices.find((v) => v.kind === "preset" && v.name.toLowerCase() === low) ??
+      allVoices.find((v) => v.id.toLowerCase() === low) ??
+      allVoices.find((v) => v.name.toLowerCase() === low));
   if (wanted) {
     ui.tag.value = "";
     fillVoices(ui, allVoices);

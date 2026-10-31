@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import re
 import shutil
 import tempfile
 import threading
@@ -17,54 +16,15 @@ from typing import Any
 from supertonic.core import Style
 from supertonic.loader import load_voice_style_from_json_file
 
-from supertonic_server.core.errors import ApiError, voice_name_taken
+from supertonic_server.core.errors import ApiError
 from supertonic_server.voices.models import Voice
-from supertonic_server.voices.presets import PRESET_IDS, PRESETS, is_reserved, preset_id_for_name
+from supertonic_server.voices.naming import check_name_free, slug, with_suffix
+from supertonic_server.voices.presets import PRESET_IDS, PRESETS, preset_id_for_name
 from supertonic_server.voices.validation import validate_style
 
 logger = logging.getLogger(__name__)
 
 _PRESET_PREVIEW_DIR = "_presets"
-
-
-MAX_SLUG_LENGTH = 64
-"""Longest custom voice id (folder name)."""
-
-# Device names Windows refuses as file or folder names, whatever the extension.
-_WINDOWS_RESERVED = frozenset(
-    {
-        "con",
-        "prn",
-        "aux",
-        "nul",
-        *(f"com{i}" for i in range(1, 10)),
-        *(f"lpt{i}" for i in range(1, 10)),
-    }
-)
-
-
-def _slug(name: str) -> str:
-    """A filesystem-safe id: lowercase ``a-z0-9-``, at most 64 characters, never reserved."""
-    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
-    slug = slug[:MAX_SLUG_LENGTH].rstrip("-") or "voice"
-    if slug in _WINDOWS_RESERVED:
-        slug = f"{slug}-voice"
-    return slug
-
-
-def _with_suffix(base: str, n: int) -> str:
-    suffix = f"-{n}"
-    return base[: MAX_SLUG_LENGTH - len(suffix)].rstrip("-") + suffix
-
-
-def check_name_free(name: str) -> None:
-    """Refuse a custom voice name that equals a built-in voice's id or name.
-
-    Raises:
-        ApiError: 409 ``voice_name_taken``.
-    """
-    if is_reserved(name):
-        raise voice_name_taken(name)
 
 
 def _atomic_write(path: Path, payload: dict[str, Any]) -> None:
@@ -143,8 +103,10 @@ class VoiceLibrary:
     def resolve(self, ref: str) -> Voice:
         """Find a voice by any reference a user may type.
 
-        Order: exact id, case-insensitive id, built-in voice name (``"Mia"`` is ``F1``),
-        then a unique custom voice name; names are case-insensitive.
+        Order: exact id, built-in voice name (``"Mia"`` is ``F1``), id in any
+        capitalisation, then a unique custom voice name; names are case-insensitive. A
+        custom voice saved as ``mia`` before the built-in names existed keeps its exact id,
+        but ``"Mia"`` means ``F1``.
 
         Raises:
             ApiError: 404 ``voice_not_found``; 400 ``ambiguous_voice`` when several custom
@@ -154,16 +116,16 @@ class VoiceLibrary:
         for v in voices:
             if v.id == ref:
                 return v
-        low = ref.lower()
-        for v in voices:
-            if v.id.lower() == low:
-                return v
         preset_id = preset_id_for_name(ref)
         if preset_id is not None:
             with self._lock:
                 preset = self._voices.get(preset_id)
             if preset is not None:
                 return preset
+        low = ref.lower()
+        for v in voices:
+            if v.id.lower() == low:
+                return v
         named = [v for v in voices if v.kind == "custom" and v.name.lower() == low]
         if len(named) == 1:
             return named[0]
@@ -217,12 +179,15 @@ class VoiceLibrary:
             # Folders on disk count too: a leftover folder without valid metadata would
             # otherwise make every import under that name fail.
             on_disk = {p.name.lower() for p in self.custom_dir.iterdir()}
-            taken = {i.lower() for i in (*self._voices, *PRESET_IDS)} | on_disk
-            base = _slug(name)
+            # Built-in names too: an id ``mia`` would win over the name "Mia" for exact-id
+            # lookups, so "Mia." becomes ``mia-2``.
+            preset_names = {p.name.lower() for p in PRESETS.values()}
+            taken = {i.lower() for i in (*self._voices, *PRESET_IDS)} | on_disk | preset_names
+            base = slug(name)
             vid, n = base, 1
             while vid in taken:
                 n += 1
-                vid = _with_suffix(base, n)
+                vid = with_suffix(base, n)
             voice = Voice(
                 vid,
                 name,
@@ -246,7 +211,14 @@ class VoiceLibrary:
             return voice
 
     def _custom(self, voice_id: str) -> Voice:
-        preset_id = preset_id_for_name(voice_id)
+        """The custom voice with this exact id, for edits and deletes.
+
+        A built-in name maps to its preset only so that, say, deleting "Mia" answers
+        ``voice_read_only`` instead of 404; an existing exact id always wins.
+        """
+        with self._lock:
+            exact = voice_id in self._voices
+        preset_id = None if exact else preset_id_for_name(voice_id)
         voice = self.get(voice_id if preset_id is None else preset_id)
         if voice.kind == "preset":
             raise ApiError(400, "voice_read_only", f"Preset voice '{voice_id}' is read-only")

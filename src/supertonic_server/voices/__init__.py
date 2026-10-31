@@ -1,7 +1,8 @@
 """Voice library: models, style validation and storage."""
 
-from supertonic_server.voices.library import VoiceLibrary, check_name_free
+from supertonic_server.voices.library import VoiceLibrary
 from supertonic_server.voices.models import Voice
+from supertonic_server.voices.naming import check_name_free
 from supertonic_server.voices.presets import PRESETS, Preset
 from supertonic_server.voices.validation import validate_style
 
