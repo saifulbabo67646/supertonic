@@ -1,10 +1,30 @@
-.superpowers/
-.venv/
+# Python
 __pycache__/
-*.pyc
-.env
-data/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Tools and caches
+.venv/
 .mypy_cache/
 .ruff_cache/
 .pytest_cache/
-dist/
+.coverage
+.coverage.*
+htmlcov/
+
+# Local settings and data
+.env
+data/
+supertonic-output/
+
+# Editors and OS files
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Internal planning notes
+.superpowers/
