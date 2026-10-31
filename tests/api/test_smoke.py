@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -58,3 +59,24 @@ def test_check_command_fails_cleanly_without_a_server(
     assert exc.value.code == 1
     out = capsys.readouterr().out
     assert "FAIL: could not reach the server" in out
+
+
+def test_run_checks_works_on_a_server_without_voice_names(tmp_path: Path) -> None:
+    """An older server knows only the ids F1...; `check` must pass against it too."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/health":
+            return httpx.Response(200, json={"status": "ok", "model": "supertonic-3"})
+        if json.loads(request.content).get("voice") != "F1":
+            return httpx.Response(404, json={"error": {"code": "voice_not_found"}})
+        if request.url.path == "/v1/audio/speech":
+            return httpx.Response(200, content=b"ID3" + b"\0" * 64)
+        words = [
+            {"text": w, "start_ms": i * 100, "end_ms": i * 100 + 90}
+            for i, w in enumerate(smoke.TIMESTAMP_WORDS)
+        ]
+        return httpx.Response(200, json={"words": words, "duration_ms": 400})
+
+    client = httpx.Client(transport=httpx.MockTransport(handler), base_url="http://x")
+    report = smoke.run_checks(client, tmp_path / "s.mp3")
+    assert report.words == smoke.TIMESTAMP_WORDS

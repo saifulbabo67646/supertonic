@@ -17,7 +17,9 @@ MODEL_ID = "supertonic-3"
 SPEECH_TEXT = "Hello from Supertonic."
 TIMESTAMP_TEXT = "Hello there, world."
 TIMESTAMP_WORDS = ["Hello", "there,", "world."]
-VOICE = "Mia"  # the built-in voice F1, by name
+# The built-in voice Mia by its id: ids work on every server version, names only on newer ones,
+# and `check` may be pointed at an older server that an agent reuses.
+VOICE = "F1"
 TIMEOUT_S = 120.0
 
 

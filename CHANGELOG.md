@@ -25,6 +25,8 @@ All notable changes to this project are documented here. The format is based on
   Windows warnings, ports, the builder install and where data lives.
 - `supertonic-server check`: a smoke test of a running server (health, a speech file and
   word timestamps) that prints `PASS` or the reason it failed, the same on every system.
+  It asks for the voice by id (`F1`), so it also passes against an older server that an
+  agent reuses.
 - Setup by coding agents: `AGENTS.md` (prerequisites, exact commands for macOS, Windows
   and Linux, running in the background, verification, the voice builder, MCP, common
   failures and a definition of done), `CLAUDE.md` importing it, and `docs/agent-setup.md`
