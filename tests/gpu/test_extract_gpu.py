@@ -210,7 +210,8 @@ def test_accurate_finish_now_saves_best_so_far(
     print(f"\naccurate (finish now): report {json.dumps(report)}")
     assert report["stopped_early"] is True
     assert report["steps"] == 8
-    assert report["duration_status"] == "stopped"
+    # Finish now ends only the timbre stage; the rhythm match still runs in full
+    assert report["duration_status"] != "stopped"
     assert report["loss"] < report["preset_distance"]  # different texts, as above
     assert report["similarity"] == round(1 - report["loss"], 4)
     _assert_valid_style(style, tmp_path, Path(tts.model_dir))
