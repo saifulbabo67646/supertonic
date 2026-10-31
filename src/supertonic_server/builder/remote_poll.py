@@ -12,7 +12,7 @@ import time
 from typing import Any
 
 from supertonic_server.builder import remote_import
-from supertonic_server.builder.models import Job, JobState
+from supertonic_server.builder.models import TERMINAL, Job, JobState
 from supertonic_server.builder.remote_http import BuilderClient, Unreachable
 from supertonic_server.core.errors import ApiError
 from supertonic_server.core.scrub import scrub_paths
@@ -20,7 +20,6 @@ from supertonic_server.voices import Voice, VoiceLibrary
 
 logger = logging.getLogger(__name__)
 
-TERMINAL = frozenset({"succeeded", "failed", "cancelled"})
 POLL_ERRORS = (Unreachable, ApiError, ValueError, KeyError, TypeError)
 """A poll that raises one of these counts as a failed contact with the builder."""
 

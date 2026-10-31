@@ -2,7 +2,8 @@
 
 Each job lives in ``data_dir/jobs/<id>/``: ``job.json`` (atomic rewrites), the prepared
 ``reference.wav``, ``progress.jsonl`` and ``worker.log``. Process handling (spawn, tree
-kill) is in :mod:`.process`; the worker protocol in :mod:`.worker`.
+kill) is in :mod:`.process`, running one job in :mod:`.jobrun` and the worker protocol
+in :mod:`.worker`.
 """
 
 from __future__ import annotations
@@ -11,51 +12,39 @@ import asyncio
 import builtins
 import contextlib
 import logging
-import os
 import shutil
 import sys
-import time
 import uuid
 from collections.abc import Sequence
-from dataclasses import dataclass, field
-from datetime import timedelta
 from pathlib import Path
 from typing import Any, Literal
 
 from supertonic_server.builder.audio_prep import prepare_reference
+from supertonic_server.builder.jobrun import ActiveRun, RunSpec, execute
 from supertonic_server.builder.jobstore import (
+    PRUNE_AFTER,
     REFERENCE,
     discard_working_files,
     load_jobs,
     now_iso,
-    read_style,
     write_job,
 )
-from supertonic_server.builder.models import BUILD_METHODS, BuildMethod, BuildRequest, Job, JobState
-from supertonic_server.builder.process import KILL_WAIT_S, kill_tree, spawn
-from supertonic_server.builder.runlog import RunLog
+from supertonic_server.builder.models import (
+    BUILD_METHODS,
+    TERMINAL,
+    BuildMethod,
+    BuildRequest,
+    Job,
+    JobState,
+)
+from supertonic_server.builder.process import KILL_WAIT_S, kill_tree
 from supertonic_server.core import errors
-from supertonic_server.core.errors import ApiError
 from supertonic_server.core.scrub import scrub_paths
 from supertonic_server.voices.library import VoiceLibrary
 
 logger = logging.getLogger(__name__)
 
 WORKER_MODULE = "supertonic_server.builder.worker"
-PRUNE_AFTER = timedelta(days=7)
-TERMINAL = frozenset({"succeeded", "failed", "cancelled"})
-
-
-@dataclass
-class _Run:
-    """The job currently held by the single worker slot."""
-
-    job: Job
-    proc: asyncio.subprocess.Process | None = None
-    cancelled: bool = False
-    exited: bool = False
-    """The worker is gone (the result is being imported)."""
-    finished: asyncio.Event = field(default_factory=asyncio.Event)
 
 
 class JobManager:
@@ -92,17 +81,15 @@ class JobManager:
     ) -> None:
         self._device, self._vram_mb = device, vram_mb
         self._root = data_dir / "jobs"
-        self._library = library
-        self._model_dir = model_dir
-        self._timeout_s = timeout_s
         self._max_waiting = max_waiting
         self._methods: tuple[BuildMethod, ...] = tuple(methods)
-        self._cmd = list(worker_cmd) if worker_cmd else [python, "-m", WORKER_MODULE]
+        cmd = list(worker_cmd) if worker_cmd else [python, "-m", WORKER_MODULE]
+        self._spec = RunSpec(self._root, tuple(cmd), model_dir, timeout_s, library)
         self._jobs: dict[str, Job] = {}
         self._queue: asyncio.Queue[str] = asyncio.Queue()
         self._preparing = 0
         self._closed = False
-        self._current: _Run | None = None
+        self._current: ActiveRun | None = None
         self._runner: asyncio.Task[None] | None = None
 
     @property
@@ -257,10 +244,10 @@ class JobManager:
             job = self._jobs.get(job_id)
             if job is None or job.state != "queued":
                 continue
-            run = _Run(job)
+            run = ActiveRun(job)
             self._current = run
             try:
-                await self._run(run)
+                await execute(run, self._spec, self._persist, self._settle)
             except Exception as exc:  # never let one job stop the runner
                 logger.exception("voice build %s crashed the runner", job_id)
                 if job.state not in TERMINAL:
@@ -272,68 +259,3 @@ class JobManager:
                     self._settle(job, "cancelled", None)
                 self._current = None
                 run.finished.set()
-
-    async def _run(self, run: _Run) -> None:
-        job = run.job
-        folder = self._root / job.id
-        job.state, job.started_at = "running", now_iso()
-        self._persist(job)
-        cmd = [
-            *self._cmd,
-            "--method", job.request.method,
-            "--wav", str(folder / REFERENCE),
-            "--out", str(folder / "style.json"),
-            "--report", str(folder / "report.json"),
-            "--model-dir", str(self._model_dir),
-            "--stop-file", str(folder / "STOP"),
-        ]  # fmt: skip
-        started = time.monotonic()
-        with RunLog(folder, job, lambda: self._persist(job)) as log:
-            try:
-                proc = await spawn(cmd, {**os.environ, "PYTHONUTF8": "1"})
-            except OSError as exc:
-                self._settle(
-                    job, "failed", {"code": "worker_failed", "message": scrub_paths(str(exc))}
-                )
-                return
-            run.proc = proc
-            if run.cancelled:
-                await kill_tree(proc)
-            timed_out = await log.follow(proc, self._timeout_s)
-        run.exited = True
-        seconds = round(time.monotonic() - started, 1)
-        if run.cancelled:
-            self._settle(job, "cancelled", None)
-        elif timed_out:
-            limit = f"{self._timeout_s / 60:g} min"
-            self._settle(job, "failed", {"code": "timeout", "message": f"build exceeded {limit}"})
-        elif log.report is not None and proc.returncode == 0:
-            importing = asyncio.ensure_future(self._import(job, log.report, seconds))
-            try:
-                await asyncio.shield(importing)
-            except asyncio.CancelledError:  # close(): finish the import, never half-record it
-                await importing
-                raise
-        else:
-            self._settle(job, "failed", log.failure(proc.returncode))
-
-    async def _import(self, job: Job, report: dict[str, Any], seconds: float) -> None:
-        req = job.request
-        try:
-            style = read_style(self._root / job.id)
-            extra = {**report, "builder": job.builder, "seconds": seconds}
-            voice = await asyncio.to_thread(
-                self._library.import_style,
-                style,
-                req.name.strip(),
-                req.description,
-                req.tags,
-                req.source_note,
-                extra=extra,
-            )
-        except (OSError, ValueError, ApiError) as exc:
-            message = scrub_paths(exc.message if isinstance(exc, ApiError) else str(exc))
-            self._settle(job, "failed", {"code": "import_failed", "message": message})
-            return
-        job.voice_id = voice.id
-        self._settle(job, "succeeded", None)

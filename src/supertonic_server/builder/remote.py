@@ -18,23 +18,28 @@ import contextlib
 import logging
 import uuid
 from collections.abc import Sequence
-from datetime import timedelta
 from pathlib import Path
 from typing import Any, Literal
 
 import httpx
 
-from supertonic_server.builder.jobstore import load_jobs, now_iso, write_job
-from supertonic_server.builder.models import BUILD_METHODS, BuildMethod, BuildRequest, Job, JobState
+from supertonic_server.builder.jobstore import PRUNE_AFTER, load_jobs, now_iso, write_job
+from supertonic_server.builder.models import (
+    BUILD_METHODS,
+    TERMINAL,
+    BuildMethod,
+    BuildRequest,
+    Job,
+    JobState,
+)
 from supertonic_server.builder.remote_http import DEFAULT_TIMEOUT, BuilderClient, Unreachable
-from supertonic_server.builder.remote_poll import POLL_ERRORS, TERMINAL, RemotePolling
+from supertonic_server.builder.remote_poll import POLL_ERRORS, RemotePolling
 from supertonic_server.core import errors
 from supertonic_server.core.errors import ApiError
 from supertonic_server.voices import VoiceLibrary
 
 logger = logging.getLogger(__name__)
 
-PRUNE_AFTER = timedelta(days=7)
 UNREACHABLE_CANCEL = {
     "code": "builder_unreachable",
     "message": "Could not reach the builder; the build may still be running there.",

@@ -14,6 +14,8 @@ BuildMethod = Literal["accurate", "fast"]
 Stage = Literal["loading", "preset", "timbre", "duration", "saving"]
 
 BUILD_METHODS: tuple[BuildMethod, ...] = ("accurate", "fast")
+TERMINAL: frozenset[JobState] = frozenset({"succeeded", "failed", "cancelled"})
+"""Job states that never change again."""
 MAX_NAME_LEN = 100
 MAX_DESCRIPTION_LEN = 500
 MAX_TAGS = 20

@@ -17,6 +17,8 @@ logger = logging.getLogger(__name__)
 REFERENCE = "reference.wav"
 WORKING_FILES = (REFERENCE, "style.json", "report.json", "STOP")
 """Files a job needs only while it is queued or running."""
+PRUNE_AFTER = timedelta(days=7)
+"""Finished jobs older than this are removed from disk at start."""
 
 
 def now_iso() -> str:
