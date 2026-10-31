@@ -33,7 +33,8 @@ internet that are not from the App Store. To allow it:
 1. Click **Done** (or **OK**) in the message.
 2. Open **System Settings > Privacy & Security** and scroll down to **Security**.
 3. Next to the message about "Start Supertonic.command", click **Open Anyway** and confirm
-   (with your password or Touch ID if asked).
+   (with your password or Touch ID if asked). If you don't see **Open Anyway**, double-click
+   the file once more, then look again.
 4. Double-click **Start Supertonic.command** again, and click **Open** if asked.
 
 macOS remembers this, so you only do it once. On older macOS versions (before macOS 15

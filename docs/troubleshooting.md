@@ -33,7 +33,7 @@ computer.
 
 | What you see | What to do |
 |---|---|
-| "Start Supertonic.command cannot be opened because it is from an unidentified developer" (or "Apple could not verify...") | Open **System Settings > Privacy & Security**, scroll down to **Security**, click **Open Anyway** next to the message about the file, confirm, then double-click it again. macOS remembers this, so you only do it once. On older macOS versions (before macOS 15 Sequoia), right-clicking the file and choosing **Open** also works. |
+| "Start Supertonic.command cannot be opened because it is from an unidentified developer" (or "Apple could not verify...") | Open **System Settings > Privacy & Security**, scroll down to **Security**, click **Open Anyway** next to the message about the file, confirm, then double-click it again. If you don't see **Open Anyway**, double-click the file once more, then look again. macOS remembers this, so you only do it once. On older macOS versions (before macOS 15 Sequoia), right-clicking the file and choosing **Open** also works. |
 | "You do not have permission to open the application" or nothing happens | The file lost its "executable" mark (this can happen with some unzip tools). Open the Terminal app, type `chmod +x ` (with a space), drag the file into the Terminal window, and press Enter. |
 | Apple Silicon or Intel? | Both work; nothing to choose. |
 
@@ -43,7 +43,7 @@ computer.
 |---|---|
 | "Windows protected your PC" (SmartScreen) | Click **More info**, then **Run anyway**. Windows shows this for files downloaded from the internet that are not signed. |
 | Your antivirus blocks or quarantines the launcher | The launcher only runs `scripts\launch.ps1` from the same folder. Allow it, or add the Supertonic folder as an exception. |
-| A firewall prompt for Python | Supertonic only listens on your own computer (`127.0.0.1`), so it does not need network access from other machines. You can click **Cancel** or allow it on private networks only. |
+| A firewall prompt for Python | You should not see this with the default settings: Supertonic only listens on your own computer (`127.0.0.1`) and needs no network access from other machines. If you do see it, click **Cancel**. |
 | "running scripts is disabled on this system" | Start with `Start Supertonic.bat`, not by double-clicking the `.ps1` file. The `.bat` file allows the script for that one window only; it never changes your system settings. |
 
 ## Ports

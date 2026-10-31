@@ -84,6 +84,8 @@ All notable changes to this project are documented here. The format is based on
 - MCP `preview_voice` names its file after the voice's id, so asking for `"Mia"` saves
   `preview-F1-en-<time>.wav`, the same as `"F1"`.
 - The docs say where the model is stored: `~/.cache/supertonic3`.
+- Beginner docs: what to do when macOS shows no **Open Anyway** button, and the Windows
+  firewall prompt (not expected with the default settings; click **Cancel**).
 - `scripts/serve.sh` and `scripts/serve.ps1` no longer uninstall the voice builder extra
   (`uv sync --inexact`).
 - CONTRIBUTING's start command (`uv run supertonic-server serve`).
