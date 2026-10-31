@@ -188,8 +188,8 @@ and whether they are within about ±22% (`null` when either is unknown); `pitch_
 false` means the voice sounds clearly higher or lower than the recording (see
 [builder.md](builder.md#the-pitch-check)). A succeeded job's `voice_id` names that voice:
 `GET /v1/voices/{voice_id}` returns it with its `build` object. MCP `get_job` returns
-the same `build` object once the job succeeded. They
-derive from the Supertonic model, so the OpenRAIL-M terms apply to them too.
+the same `build` object once the job succeeded. Built voices derive from the Supertonic
+model, so the OpenRAIL-M terms apply to them too.
 
 `POST /v1/voices/build` takes `multipart/form-data`:
 

@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -28,6 +29,8 @@ from supertonic_server.builder.extract.common.frozen_tts import SR, FrozenTTS, P
 from supertonic_server.builder.extract.common.pitch import median_f0, pitch_report
 from supertonic_server.builder.extract.common.style_file import style_to_json
 from supertonic_server.builder.extract.duration_config import DurationConfig
+
+logger = logging.getLogger(__name__)
 
 
 def finish_with_duration(
@@ -94,8 +97,16 @@ def finish_with_duration(
 def _voice_f0(
     prompts: Sequence[Prompt], ttl: torch.Tensor, dp: torch.Tensor, tts: FrozenTTS
 ) -> float | None:
-    """Median F0 of the first prompt spoken with the final style (``None`` without prompts)."""
+    """Median F0 of the first prompt spoken with the final style (``None`` without prompts).
+
+    Only a diagnostic: a failure here (for example out of GPU memory) is logged and gives
+    ``None``, never costs the finished build.
+    """
     if not prompts:
         return None
-    wav = np.asarray(tts.synthesize_at_own_length(prompts[0], ttl, dp))
+    try:
+        wav = np.asarray(tts.synthesize_at_own_length(prompts[0], ttl, dp))
+    except Exception:
+        logger.warning("could not measure the new voice's pitch", exc_info=True)
+        return None
     return median_f0(wav, SR)

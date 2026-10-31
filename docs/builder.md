@@ -210,21 +210,21 @@ lands in the builder's library.
 
 The reference audio is decoded and checked while the build request is answered, before the
 job exists. The job state is `queued`, then `running` with a stage: `loading`, `preset` (the
-start-voice scan, one line per built-in voice with its score and pitch), `timbre` (the optimisation, with step, total and loss), `duration`
-(the rhythm) and `saving`. One build runs at a time
-per builder; up to 8 more wait, and a ninth gets `503 builder_busy`.
+start-voice scan, one line per built-in voice with its score and pitch), `timbre` (the
+optimisation, with step, total and loss), `duration` (the rhythm) and `saving`. One build
+runs at a time per builder; up to 8 more wait, and a ninth gets `503 builder_busy`.
 
 - **Cancel** (`DELETE /v1/jobs/{id}`, the Cancel button) stops the worker and its whole
   process tree within seconds. The job ends `cancelled` and nothing is imported.
-- **Finish now** (`POST /v1/jobs/{id}/finish`, the Finish now button, MCP `finish_job`)
-  ends the timbre stage: the optimisation stops at the next step and keeps the best numbers
-  found so far. The rhythm matching (`duration`, 2 to 5 minutes) still runs in full, then
-  the voice is saved and imported; the UI shows "Finishing: matching the speaking pace" in
-  the meantime. The job succeeds with `build.stopped_early: true` and a real
-  `duration_status` (for example `converged`). An `accurate` build is already close to the
-  speaker after a few hundred steps (similarity about 0.8 for the test voice after 300
-  steps), so this is a good way to get a usable voice sooner. Finishing during the preset
-  scan chooses among the presets measured so far, by the same rules; finishing while models are still loading
+- **Finish now** (`POST /v1/jobs/{id}/finish`, the Finish now button, MCP `finish_job`) ends
+  the timbre stage: the optimisation stops at the next step and keeps the best numbers found
+  so far. The rhythm matching (`duration`, 2 to 5 minutes) still runs in full, then the
+  voice is saved and imported; the UI shows "Finishing: matching the speaking pace" in the
+  meantime. The job succeeds with `build.stopped_early: true` and a real `duration_status`
+  (for example `converged`). An `accurate` build is already close to the speaker after a few
+  hundred steps (similarity about 0.8 for the test voice after 300 steps), so this is a good
+  way to get a usable voice sooner. Finishing during the preset scan chooses among the
+  presets measured so far, by the same rules; finishing while models are still loading
   (before any style exists) fails with `nothing_to_save`. Finish now is accepted once per
   job: a second press while it is finishing changes nothing, so the rhythm stage cannot be
   cut short that way. Only when the timbre stage ended on its own does a Finish now during
@@ -236,19 +236,19 @@ per builder; up to 8 more wait, and a ninth gets `503 builder_busy`.
 
 ## Build report
 
-Every build stores a report in the voice's `build` metadata: `method`, `preset_start`
-(the start voice, see [the start voice](#the-start-voice)), `preset_distance` (that preset's loss in the scan), `loss`
-(the best loss reached), `steps` (`accurate`: steps run; `fast`: the step that reached the
-best loss), `duration_status`, `rate_ref` and `rate_final` (syllable rate of the reference
-and of the result), `seconds`, `stopped_early` and `builder` (`local` or
-`remote:<host:port>`), and the [pitch check](#the-pitch-check): `pitch_reference_hz` and
+Every build stores a report in the voice's `build` metadata: `method`, `preset_start` (the
+start voice, see [the start voice](#the-start-voice)), `preset_distance` (that preset's loss
+in the scan), `loss` (the best loss reached), `steps` (`accurate`: steps run; `fast`: the
+step that reached the best loss), `duration_status`, `rate_ref` and `rate_final` (syllable
+rate of the reference and of the result), `seconds`, `stopped_early` and `builder` (`local`
+or `remote:<host:port>`), and the [pitch check](#the-pitch-check): `pitch_reference_hz` and
 `pitch_voice_hz` (median pitch in Hz of the recording and of the new voice, `null` when it
 could not be measured) and `pitch_match` (`true` when they are within about ±22%, `false`
-when not, `null` when either is unknown). `accurate` adds `similarity` (= 1 - loss, ECAPA cosine similarity)
-and `best_step` (the step that reached the best loss; 0 means the start preset was kept).
-For `accurate` the scan measures every preset on the first training sentence while the
-descent rotates through all sixteen, so `loss` and `preset_distance` come from different
-sentences.
+when not, `null` when either is unknown). `accurate` adds `similarity` (= 1 - loss, ECAPA
+cosine similarity) and `best_step` (the step that reached the best loss; 0 means the start
+preset was kept). For `accurate` the scan measures every preset on the first training
+sentence while the descent rotates through all sixteen, so `loss` and `preset_distance` come
+from different sentences.
 
 ## Good reference audio
 
@@ -286,7 +286,7 @@ sentences.
 | `.env` or JSON written from PowerShell is not read correctly | In Windows PowerShell 5.1, `>` and `Out-File` write UTF-16, which the server cannot read, and `-Encoding utf8` adds a byte-order mark (fine for `.env`, which the server reads as UTF-8 with or without one, but not for JSON files). Write `.env` with `Set-Content .env 'NAME=value' -Encoding ascii`; write other files with an editor, from Python, or with `[IO.File]::WriteAllText($path, $text, (New-Object Text.UTF8Encoding $false))`. |
 | `UnicodeEncodeError` / `charmap` codec errors in logs on Windows | The console uses cp1252. The server starts the worker with `PYTHONUTF8=1`; set it yourself (`$env:PYTHONUTF8 = '1'`) when running the worker or scripts by hand. |
 | `torchaudio` complains about missing FFmpeg DLLs on Windows | torchaudio 2.9 needs FFmpeg *shared* libraries to load audio files. The builder never calls `torchaudio.load` (it decodes with soundfile and the bundled ffmpeg), so this only affects your own scripts. |
-| The new voice sounds higher or lower than the speaker (`pitch_match: false`) | The recording has too little clear voice for the builder to measure and copy. Record again: 30 to 60 seconds, close to the microphone, in a normal speaking voice, then build again. Voices built before the start voice was chosen by pitch can start from the wrong built-in voice; build those again too. |
+| The new voice sounds higher or lower than the speaker (`pitch_match: false`) | The recording has too little clear voice for the builder to measure and copy, or the builder's judge pulled the voice away from the speaker's pitch. Build again with the other method, or record again: 30 to 60 seconds, close to the microphone, in a normal speaking voice, then build again. Voices built before the start voice was chosen by pitch can start from the wrong built-in voice; build those again too. |
 | Forwarding machine: `503 builder_unavailable` | The builder URL is wrong, the builder is not running, the key does not match, the firewall blocks the port or the SSH tunnel is down. `curl -H "Authorization: Bearer <key>" <builder-url>/v1/health` from the forwarding machine must show `"builder":"local"`. |
 | Forwarded job failed `builder_lost` | The builder could not be reached for 2 minutes (sleep, network change, tunnel closed). The builder may still finish the build into its own library; export it from there and import it. |
 
